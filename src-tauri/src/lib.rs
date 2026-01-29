@@ -1,8 +1,11 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+mod commands;
+mod models;
+mod utils;
+
+use commands::{
+    fetch_navidrome_songs, get_lyrics, get_music_metadata, get_navidrome_stream_url,
+    scan_music_files, test_navidrome_connection,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,7 +14,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![greet])
+        .plugin(tauri_plugin_os::init())
+        .invoke_handler(tauri::generate_handler![
+            scan_music_files,
+            get_music_metadata,
+            get_lyrics,
+            test_navidrome_connection,
+            fetch_navidrome_songs,
+            get_navidrome_stream_url
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
