@@ -3,8 +3,8 @@ mod models;
 mod utils;
 
 use commands::{
-    fetch_navidrome_songs, get_lyrics, get_music_metadata, get_navidrome_stream_url,
-    scan_music_files, test_navidrome_connection,
+    fetch_navidrome_songs, get_lyrics, get_music_metadata, get_navidrome_lyrics,
+    get_navidrome_stream_url, scan_music_files, test_navidrome_connection,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,7 +21,8 @@ pub fn run() {
             get_lyrics,
             test_navidrome_connection,
             fetch_navidrome_songs,
-            get_navidrome_stream_url
+            get_navidrome_stream_url,
+            get_navidrome_lyrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,6 +3,7 @@
 
 use rand::Rng;
 use reqwest::Client;
+use serde::Deserialize;
 
 use crate::models::{
     ConnectionTestResult, GetAlbumListResponse, GetAlbumResponse, NavidromeConfig, PingResponse,
@@ -257,11 +258,125 @@ pub async fn fetch_album_songs(
 /// 获取歌曲流 URL
 pub fn get_stream_url(config: &NavidromeConfig, song_id: &str) -> String {
     let base = config.server_url.trim_end_matches('/');
-    let params = generate_auth_params(config);
+    // 流媒体请求不需要 f=json 参数
+    let salt: String = rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(12)
+        .map(char::from)
+        .collect();
+    let token = format!("{:x}", md5::compute(format!("{}{}", config.password, salt)));
+    let params = vec![
+        ("u", config.username.clone()),
+        ("t", token),
+        ("s", salt),
+        ("v", "1.16.1".to_string()),
+        ("c", "BaYin".to_string()),
+    ];
     let query: String = params
         .iter()
         .map(|(k, v)| format!("{}={}", k, v))
         .collect::<Vec<_>>()
         .join("&");
     format!("{}/rest/stream?id={}&{}", base, song_id, query)
+}
+
+/// 获取歌词响应
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLyricsResponse {
+    pub lyrics: Option<LyricsData>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsData {
+    pub value: Option<String>,
+}
+
+/// 获取结构化歌词响应 (Navidrome 扩展)
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLyricsBySongIdResponse {
+    pub lyrics_list: Option<LyricsList>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsList {
+    pub structured_lyrics: Option<Vec<StructuredLyrics>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructuredLyrics {
+    pub synced: Option<bool>,
+    pub line: Option<Vec<LyricLine>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricLine {
+    pub start: Option<u64>,
+    pub value: Option<String>,
+}
+
+/// 获取歌曲歌词
+pub async fn get_lyrics(config: &NavidromeConfig, song_id: &str) -> Option<String> {
+    let client = Client::new();
+
+    // 首先尝试 getLyricsBySongId (Navidrome 扩展，支持同步歌词)
+    let url = build_url(config, "getLyricsBySongId");
+    let mut params = generate_auth_params(config);
+    params.push(("id", song_id.to_string()));
+
+    if let Ok(response) = client.get(&url).query(&params).send().await {
+        if response.status().is_success() {
+            if let Ok(data) = response.json::<SubsonicResponse<GetLyricsBySongIdResponse>>().await {
+                if data.subsonic_response.status == "ok" {
+                    if let Some(lyrics_data) = data.subsonic_response.data {
+                        if let Some(lyrics_list) = lyrics_data.lyrics_list {
+                            if let Some(structured) = lyrics_list.structured_lyrics {
+                                // 优先使用同步歌词
+                                for sl in &structured {
+                                    if sl.synced == Some(true) {
+                                        if let Some(lines) = &sl.line {
+                                            let lrc = lines.iter()
+                                                .filter_map(|l| {
+                                                    let start = l.start.unwrap_or(0);
+                                                    let value = l.value.as_ref()?;
+                                                    let mins = start / 60000;
+                                                    let secs = (start % 60000) / 1000;
+                                                    let ms = (start % 1000) / 10;
+                                                    Some(format!("[{:02}:{:02}.{:02}]{}", mins, secs, ms, value))
+                                                })
+                                                .collect::<Vec<_>>()
+                                                .join("\n");
+                                            if !lrc.is_empty() {
+                                                return Some(lrc);
+                                            }
+                                        }
+                                    }
+                                }
+                                // 如果没有同步歌词，使用非同步歌词
+                                for sl in &structured {
+                                    if let Some(lines) = &sl.line {
+                                        let text = lines.iter()
+                                            .filter_map(|l| l.value.as_ref())
+                                            .cloned()
+                                            .collect::<Vec<_>>()
+                                            .join("\n");
+                                        if !text.is_empty() {
+                                            return Some(text);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
