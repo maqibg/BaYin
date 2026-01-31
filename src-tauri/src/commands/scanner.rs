@@ -1,8 +1,68 @@
 use std::path::Path;
+use std::fs;
 use walkdir::WalkDir;
+use serde::Serialize;
 
 use crate::models::{ScanOptions, ScannedSong};
 use crate::utils::audio::{is_audio_file, read_lyrics, read_metadata};
+
+/// 目录项
+#[derive(Debug, Serialize)]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+}
+
+/// 列出目录内容（仅目录）
+#[tauri::command]
+pub fn list_directories(path: String) -> Result<Vec<DirectoryEntry>, String> {
+    let dir_path = Path::new(&path);
+
+    if !dir_path.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    if !dir_path.is_dir() {
+        return Err(format!("Path is not a directory: {}", path));
+    }
+
+    let mut entries = Vec::new();
+
+    match fs::read_dir(dir_path) {
+        Ok(read_dir) => {
+            for entry in read_dir.filter_map(|e| e.ok()) {
+                let entry_path = entry.path();
+                // 只返回目录
+                if entry_path.is_dir() {
+                    let name = entry_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+
+                    // 跳过隐藏目录
+                    if name.starts_with('.') {
+                        continue;
+                    }
+
+                    entries.push(DirectoryEntry {
+                        name,
+                        path: entry_path.to_string_lossy().to_string(),
+                        is_dir: true,
+                    });
+                }
+            }
+        }
+        Err(e) => {
+            return Err(format!("Failed to read directory: {}", e));
+        }
+    }
+
+    // 按名称排序
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    Ok(entries)
+}
 
 /// 扫描指定目录中的音乐文件
 #[tauri::command]

@@ -4,7 +4,7 @@ mod utils;
 
 use commands::{
     fetch_navidrome_songs, get_lyrics, get_music_metadata, get_navidrome_lyrics,
-    get_navidrome_stream_url, scan_music_files, test_navidrome_connection,
+    get_navidrome_stream_url, list_directories, scan_music_files, test_navidrome_connection,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,6 +19,7 @@ pub fn run() {
             scan_music_files,
             get_music_metadata,
             get_lyrics,
+            list_directories,
             test_navidrome_connection,
             fetch_navidrome_songs,
             get_navidrome_stream_url,
