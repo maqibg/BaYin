@@ -25,7 +25,7 @@ android {
     compileSdk = 36
     namespace = "com.hao.bayin"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.hao.bayin"
         minSdk = 24
         targetSdk = 36
