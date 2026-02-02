@@ -1,2 +1,3 @@
 pub mod audio;
-pub mod navidrome;
+pub mod jellyfin;
+pub mod subsonic;

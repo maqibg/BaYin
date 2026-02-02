@@ -1,5 +1,5 @@
-pub mod navidrome;
+pub mod streaming;
 pub mod song;
 
-pub use navidrome::*;
+pub use streaming::*;
 pub use song::*;

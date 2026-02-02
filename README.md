@@ -55,8 +55,8 @@ BaYin/
 - 音质标签显示 (HR: Hi-Res, SQ: 无损)
 - 歌单创建与管理
 
-### Navidrome 集成
-- 连接 Navidrome/Subsonic 服务器
+### 流媒体服务器集成
+- 支持多种服务器类型：Navidrome、Jellyfin、Emby、Subsonic、OpenSubsonic
 - 远程音乐库浏览与播放
 - 歌词同步获取
 
@@ -124,9 +124,9 @@ npm run dev
 
 | 模块 | 功能 |
 |------|------|
-| `audio.ts` | 音频播放控制（支持本地和 Navidrome） |
+| `audio.ts` | 音频播放控制（支持本地和流媒体） |
 | `scanner.ts` | 本地音乐扫描、歌词获取 |
-| `navidrome.ts` | Navidrome 服务器 API |
+| `streaming.ts` | 流媒体服务器 API（Subsonic/Jellyfin） |
 | `storage.ts` | 持久化存储 |
 | `tauri.ts` | 环境检测工具 |
 
@@ -139,10 +139,11 @@ npm run dev
 | `scan_music_files` | 扫描本地音乐文件 |
 | `get_music_metadata` | 获取音频元数据 |
 | `get_lyrics` | 获取本地歌词 |
-| `test_navidrome_connection` | 测试 Navidrome 连接 |
-| `fetch_navidrome_songs` | 获取 Navidrome 歌曲列表 |
-| `get_navidrome_stream_url` | 获取 Navidrome 流媒体 URL |
-| `get_navidrome_lyrics` | 获取 Navidrome 歌词 |
+| `test_stream_connection` | 测试流媒体服务器连接 |
+| `fetch_stream_songs` | 获取流媒体歌曲列表 |
+| `get_stream_url` | 获取流媒体播放 URL |
+| `get_stream_lyrics` | 获取流媒体歌词 |
+| `jellyfin_authenticate` | Jellyfin/Emby 认证 |
 
 ## 许可证
 

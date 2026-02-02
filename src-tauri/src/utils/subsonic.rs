@@ -1,4 +1,5 @@
-//! Navidrome/Subsonic API 工具函数
+//! Subsonic API 工具函数
+//! 支持 Navidrome、Subsonic、OpenSubsonic 等兼容服务器
 #![allow(dead_code)]
 
 use rand::Rng;
@@ -6,7 +7,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use crate::models::{
-    ConnectionTestResult, GetAlbumListResponse, GetAlbumResponse, NavidromeConfig, PingResponse,
+    ConnectionTestResult, GetAlbumListResponse, GetAlbumResponse, StreamServerConfig, PingResponse,
     ScannedSong, SearchResponse, SubsonicResponse, SubsonicSong,
 };
 
@@ -14,7 +15,7 @@ use crate::models::{
 const LOSSLESS_SUFFIXES: &[&str] = &["flac", "wav", "ape", "aiff", "dsf", "dff", "alac"];
 
 /// 生成 Subsonic API 认证参数
-fn generate_auth_params(config: &NavidromeConfig) -> Vec<(&str, String)> {
+fn generate_auth_params(config: &StreamServerConfig) -> Vec<(&str, String)> {
     let salt: String = rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)
         .take(12)
@@ -34,13 +35,13 @@ fn generate_auth_params(config: &NavidromeConfig) -> Vec<(&str, String)> {
 }
 
 /// 构建 API URL
-fn build_url(config: &NavidromeConfig, endpoint: &str) -> String {
+fn build_url(config: &StreamServerConfig, endpoint: &str) -> String {
     let base = config.server_url.trim_end_matches('/');
     format!("{}/rest/{}", base, endpoint)
 }
 
 /// 测试服务器连接
-pub async fn test_connection(config: &NavidromeConfig) -> ConnectionTestResult {
+pub async fn test_connection(config: &StreamServerConfig) -> ConnectionTestResult {
     let client = Client::new();
     let url = build_url(config, "ping");
     let params = generate_auth_params(config);
@@ -94,7 +95,7 @@ pub async fn test_connection(config: &NavidromeConfig) -> ConnectionTestResult {
 }
 
 /// 将 Subsonic 歌曲转换为 ScannedSong
-fn convert_song(song: &SubsonicSong, config: &NavidromeConfig) -> ScannedSong {
+fn convert_song(song: &SubsonicSong, config: &StreamServerConfig) -> ScannedSong {
     let suffix = song.suffix.as_deref().unwrap_or("");
     let is_sq = LOSSLESS_SUFFIXES.contains(&suffix.to_lowercase().as_str());
     let is_hr = song.sampling_rate.map(|r| r > 44100).unwrap_or(false)
@@ -130,7 +131,7 @@ fn convert_song(song: &SubsonicSong, config: &NavidromeConfig) -> ScannedSong {
 }
 
 /// 获取所有歌曲（通过搜索所有）
-pub async fn fetch_all_songs(config: &NavidromeConfig) -> Result<Vec<ScannedSong>, String> {
+pub async fn fetch_all_songs(config: &StreamServerConfig) -> Result<Vec<ScannedSong>, String> {
     let client = Client::new();
     let mut all_songs = Vec::new();
 
@@ -177,7 +178,7 @@ pub async fn fetch_all_songs(config: &NavidromeConfig) -> Result<Vec<ScannedSong
 
 /// 获取专辑列表
 pub async fn fetch_albums(
-    config: &NavidromeConfig,
+    config: &StreamServerConfig,
 ) -> Result<Vec<crate::models::SubsonicAlbum>, String> {
     let client = Client::new();
     let url = build_url(config, "getAlbumList2");
@@ -216,7 +217,7 @@ pub async fn fetch_albums(
 
 /// 获取专辑中的所有歌曲
 pub async fn fetch_album_songs(
-    config: &NavidromeConfig,
+    config: &StreamServerConfig,
     album_id: &str,
 ) -> Result<Vec<ScannedSong>, String> {
     let client = Client::new();
@@ -256,7 +257,7 @@ pub async fn fetch_album_songs(
 }
 
 /// 获取歌曲流 URL
-pub fn get_stream_url(config: &NavidromeConfig, song_id: &str) -> String {
+pub fn get_stream_url(config: &StreamServerConfig, song_id: &str) -> String {
     let base = config.server_url.trim_end_matches('/');
     // 流媒体请求不需要 f=json 参数
     let salt: String = rand::thread_rng()
@@ -293,7 +294,7 @@ pub struct LyricsData {
     pub value: Option<String>,
 }
 
-/// 获取结构化歌词响应 (Navidrome 扩展)
+/// 获取结构化歌词响应 (OpenSubsonic 扩展)
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetLyricsBySongIdResponse {
@@ -321,10 +322,10 @@ pub struct LyricLine {
 }
 
 /// 获取歌曲歌词
-pub async fn get_lyrics(config: &NavidromeConfig, song_id: &str) -> Option<String> {
+pub async fn get_lyrics(config: &StreamServerConfig, song_id: &str) -> Option<String> {
     let client = Client::new();
 
-    // 首先尝试 getLyricsBySongId (Navidrome 扩展，支持同步歌词)
+    // 首先尝试 getLyricsBySongId (OpenSubsonic 扩展，支持同步歌词)
     let url = build_url(config, "getLyricsBySongId");
     let mut params = generate_auth_params(config);
     params.push(("id", song_id.to_string()));
