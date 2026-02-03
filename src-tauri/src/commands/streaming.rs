@@ -1,6 +1,17 @@
 use crate::models::{ConnectionTestResult, ScannedSong, StreamServerConfig};
 use crate::utils::{jellyfin, subsonic};
 
+// ============ 内部函数（供其他模块调用） ============
+
+/// 从流媒体服务器获取所有歌曲（内部函数）
+pub async fn fetch_stream_songs_internal(config: &StreamServerConfig) -> Result<Vec<ScannedSong>, String> {
+    if config.is_subsonic() {
+        subsonic::fetch_all_songs(config).await
+    } else {
+        jellyfin::fetch_all_songs(config).await
+    }
+}
+
 // ============ 统一命令（新） ============
 
 /// 测试流媒体服务器连接

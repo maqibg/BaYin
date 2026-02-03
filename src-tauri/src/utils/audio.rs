@@ -6,7 +6,7 @@ use lofty::file::AudioFile;
 use lofty::prelude::*;
 use lofty::probe::Probe;
 
-use crate::models::ScannedSong;
+use crate::models::{ScannedSong, ScannedSongWithMtime};
 
 /// 支持的音频文件扩展名
 const AUDIO_EXTENSIONS: &[&str] = &[
@@ -131,4 +131,94 @@ pub fn read_metadata(path: &Path) -> Result<ScannedSong, String> {
         is_hr: Some(is_hr),
         is_sq: Some(is_sq),
     })
+}
+
+/// Read audio file metadata with modification time (for incremental scanning)
+pub fn read_metadata_with_mtime(path: &Path) -> Result<ScannedSongWithMtime, String> {
+    let file_path_str = path.to_string_lossy().to_string();
+
+    // Get file metadata
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("无法获取文件信息: {}", e))?;
+
+    let file_size = metadata.len();
+
+    // Get file modification time as unix timestamp
+    let file_modified = metadata
+        .modified()
+        .map_err(|e| format!("无法获取文件修改时间: {}", e))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // Use lofty to read audio file
+    let tagged_file = Probe::open(path)
+        .map_err(|e| format!("无法打开文件: {}", e))?
+        .read()
+        .map_err(|e| format!("无法读取音频文件: {}", e))?;
+
+    // Get audio properties
+    let properties = tagged_file.properties();
+    let duration = properties.duration().as_secs_f64();
+    let sample_rate = properties.sample_rate().unwrap_or(0);
+    let bit_depth = properties.bit_depth();
+
+    // Determine audio quality
+    let is_sq = is_lossless_format(path);
+    let is_hr = sample_rate > 44100 || bit_depth.map(|d| d > 16).unwrap_or(false);
+
+    // Get tag information
+    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+
+    let title = tag
+        .and_then(|t| t.title().map(|s| s.to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| extract_filename(path));
+
+    let artist = tag
+        .and_then(|t| t.artist().map(|s| s.to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "未知艺术家".to_string());
+
+    let album = tag
+        .and_then(|t| t.album().map(|s| s.to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "未知专辑".to_string());
+
+    // Extract cover
+    let cover_url = tag.and_then(|t| {
+        t.pictures().first().map(|pic| {
+            let mime = pic.mime_type().map(|m| m.as_str()).unwrap_or("image/jpeg");
+            let b64 = BASE64.encode(pic.data());
+            format!("data:{};base64,{}", mime, b64)
+        })
+    });
+
+    // Use file path hash as unique ID
+    let id = format!("{:x}", md5::compute(&file_path_str));
+
+    Ok(ScannedSongWithMtime {
+        id,
+        title,
+        artist,
+        album,
+        duration,
+        file_path: file_path_str,
+        file_size,
+        cover_url,
+        is_hr: Some(is_hr),
+        is_sq: Some(is_sq),
+        file_modified,
+    })
+}
+
+/// Get file modification time without reading full metadata
+pub fn get_file_mtime(path: &Path) -> Result<i64, String> {
+    std::fs::metadata(path)
+        .map_err(|e| format!("无法获取文件信息: {}", e))?
+        .modified()
+        .map_err(|e| format!("无法获取文件修改时间: {}", e))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .map_err(|e| format!("时间转换错误: {}", e))
 }
