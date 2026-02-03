@@ -14,7 +14,7 @@
 
 </div>
 
-![main](public/pc_playpage.png)
+![main](public/pc_mainpage_light.png)
 
 ## 技术栈
 
