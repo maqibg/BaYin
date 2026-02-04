@@ -133,11 +133,11 @@ jobs:
         run: |
           mkdir -p src-tauri/gen/android  # 确保目录存在
           cat > src-tauri/gen/android/keystore.properties << EOF
-          storeFile=${{ github.workspace }}/release.keystore
-          storePassword=$ANDROID_KEYSTORE_PASSWORD
-          keyAlias=$ANDROID_KEY_ALIAS
-          keyPassword=$ANDROID_KEY_PASSWORD
-          EOF
+storeFile=${{ github.workspace }}/release.keystore
+storePassword=$ANDROID_KEYSTORE_PASSWORD
+keyAlias=$ANDROID_KEY_ALIAS
+keyPassword=$ANDROID_KEY_PASSWORD
+EOF
       - name: Configure Gradle Signing (Safe Mode)
         run: |
           GRADLE_FILE="src-tauri/gen/android/app/build.gradle.kts"
@@ -148,7 +148,7 @@ jobs:
           fi
           # 2. 仅当未配置签名时追加配置（避免重复）
           if ! grep -q "android.signingConfigs" "$GRADLE_FILE"; then
-            cat >> "$GRADLE_FILE" << 'EOF'
+            cat >> "$GRADLE_FILE" << EOF
 
 // Auto-generated signing config by GitHub Action
 val keystorePropsFile = rootProject.file("keystore.properties")
