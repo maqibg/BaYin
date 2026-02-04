@@ -11,6 +11,7 @@ pub struct DbAlbum {
     pub name: String,
     pub artist: String,
     pub cover_hash: Option<String>,  // SHA256 hash for cover lookup
+    pub stream_cover_url: Option<String>, // Cover URL from stream_info for stream songs
     pub song_count: i64,
 }
 
@@ -21,6 +22,7 @@ pub struct DbArtist {
     pub id: String,
     pub name: String,
     pub cover_hash: Option<String>,  // SHA256 hash for cover lookup
+    pub stream_cover_url: Option<String>, // Cover URL from stream_info for stream songs
     pub song_count: i64,
 }
 
@@ -31,6 +33,7 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<DbAlbum>> {
             album,
             MIN(artist) as artist,
             MIN(cover_hash) as cover_hash,
+            MIN(json_extract(stream_info, '$.coverUrl')) as stream_cover_url,
             COUNT(*) as song_count
          FROM songs
          WHERE cover_hash IS NOT NULL OR cover_hash IS NULL
@@ -42,7 +45,8 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<DbAlbum>> {
         let album_name: String = row.get(0)?;
         let artist: String = row.get(1)?;
         let cover_hash: Option<String> = row.get(2)?;
-        let song_count: i64 = row.get(3)?;
+        let stream_cover_url: Option<String> = row.get(3)?;
+        let song_count: i64 = row.get(4)?;
 
         // Generate a stable ID from album name
         let id = format!("album-{:x}", md5::compute(&album_name));
@@ -52,6 +56,7 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<DbAlbum>> {
             name: album_name,
             artist,
             cover_hash,
+            stream_cover_url,
             song_count,
         })
     })?.collect::<Result<Vec<_>>>()?;
@@ -65,6 +70,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<DbArtist>> {
         "SELECT
             artist,
             MIN(cover_hash) as cover_hash,
+            MIN(json_extract(stream_info, '$.coverUrl')) as stream_cover_url,
             COUNT(*) as song_count
          FROM songs
          GROUP BY artist
@@ -74,7 +80,8 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<DbArtist>> {
     let artists = stmt.query_map([], |row| {
         let artist_name: String = row.get(0)?;
         let cover_hash: Option<String> = row.get(1)?;
-        let song_count: i64 = row.get(2)?;
+        let stream_cover_url: Option<String> = row.get(2)?;
+        let song_count: i64 = row.get(3)?;
 
         // Generate a stable ID from artist name
         let id = format!("artist-{:x}", md5::compute(&artist_name));
@@ -83,6 +90,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<DbArtist>> {
             id,
             name: artist_name,
             cover_hash,
+            stream_cover_url,
             song_count,
         })
     })?.collect::<Result<Vec<_>>>()?;
