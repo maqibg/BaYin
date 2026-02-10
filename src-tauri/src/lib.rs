@@ -32,7 +32,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_os::init());
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_process::init());
 
     // 窗口状态插件仅桌面端使用（必须在窗口创建前注册）
     #[cfg(desktop)]
