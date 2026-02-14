@@ -46,6 +46,21 @@ fn set_tray_language(app: tauri::AppHandle, lang: String) {
     }
 }
 
+/// Get MIME type from file extension
+fn get_mime_type(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("mp3") => "audio/mpeg",
+        Some("flac") => "audio/flac",
+        Some("wav") => "audio/wav",
+        Some("ogg") => "audio/ogg",
+        Some("m4a") | Some("aac") => "audio/mp4",
+        Some("opus") => "audio/opus",
+        Some("wma") => "audio/x-ms-wma",
+        Some("aiff") | Some("aif") => "audio/aiff",
+        _ => "application/octet-stream",
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()

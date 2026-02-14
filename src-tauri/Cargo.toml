@@ -39,6 +39,7 @@ rayon = "1.11.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+percent-encoding = "2.3"
 
 # 桌面端专用依赖（排除 Android 和 iOS）
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

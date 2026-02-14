@@ -246,6 +246,7 @@ dependencies = [
  "lofty",
  "md5",
  "notify",
+ "percent-encoding",
  "rand 0.8.5",
  "rayon",
  "reqwest",
