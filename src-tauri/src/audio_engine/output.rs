@@ -10,6 +10,7 @@ pub struct AudioOutput {
     pub producer: HeapProd<f32>,
     pub config: StreamConfig,
     playing: Arc<AtomicBool>,
+    flushing: Arc<AtomicBool>,
 }
 
 impl AudioOutput {
@@ -55,8 +56,10 @@ impl AudioOutput {
 
         let playing = Arc::new(AtomicBool::new(true));
         let playing_clone = playing.clone();
+        let flushing = Arc::new(AtomicBool::new(false));
+        let flushing_clone = flushing.clone();
 
-        let stream = build_output_stream(&device, &config, consumer, playing_clone)?;
+        let stream = build_output_stream(&device, &config, consumer, playing_clone, flushing_clone)?;
         stream
             .play()
             .map_err(|e| format!("Failed to start audio stream: {}", e))?;
@@ -66,6 +69,7 @@ impl AudioOutput {
             producer,
             config,
             playing,
+            flushing,
         })
     }
 
@@ -76,6 +80,11 @@ impl AudioOutput {
     pub fn resume(&self) {
         self.playing.store(true, Ordering::Relaxed);
     }
+
+    /// Signal the output callback to discard all buffered audio.
+    pub fn flush(&self) {
+        self.flushing.store(true, Ordering::Relaxed);
+    }
 }
 
 fn build_output_stream(
@@ -83,11 +92,20 @@ fn build_output_stream(
     config: &StreamConfig,
     mut consumer: HeapCons<f32>,
     playing: Arc<AtomicBool>,
+    flushing: Arc<AtomicBool>,
 ) -> Result<Stream, String> {
+    let mut flush_buf = vec![0.0f32; 4096];
     let stream = device
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                // On flush: drain all buffered data and output silence
+                if flushing.load(Ordering::Relaxed) {
+                    while consumer.pop_slice(&mut flush_buf) > 0 {}
+                    flushing.store(false, Ordering::Relaxed);
+                    data.fill(0.0);
+                    return;
+                }
                 if !playing.load(Ordering::Relaxed) {
                     data.fill(0.0);
                     return;

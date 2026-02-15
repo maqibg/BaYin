@@ -212,8 +212,10 @@ fn audio_thread(
                             eprintln!("Seek error: {}", e);
                         } else {
                             position_secs = pos;
-                            // Clear ring buffer by dropping and recreating output
-                            // Actually just update position; ring buffer will flush naturally
+                            // Flush ring buffer so old audio doesn't keep playing
+                            if let Some(ref out) = output {
+                                out.flush();
+                            }
                             eq.reset();
                             update_state(&state, is_playing, position_secs, duration_secs, volume);
                         }
