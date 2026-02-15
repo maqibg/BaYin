@@ -3,12 +3,9 @@ package com.hao.bayin
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.View
@@ -19,18 +16,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import java.io.File
 
 class MainActivity : TauriActivity() {
   private val TAG = "BaYinMainActivity"
   private val PERMISSION_REQUEST_CODE = 1001
   private var webViewRef: WebView? = null
-
-  // MediaPlayer 相关
-  private var mediaPlayer: MediaPlayer? = null
-  private val handler = Handler(Looper.getMainLooper())
-  private var progressRunnable: Runnable? = null
-  private var currentFilePath: String? = null
 
   // Splash screen 相关
   private var keepSplashScreen = true
@@ -64,19 +54,6 @@ class MainActivity : TauriActivity() {
 
     // 添加 JavaScript 接口
     webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
-  }
-
-  override fun onDestroy() {
-    super.onDestroy()
-    releaseMediaPlayer()
-  }
-
-  private fun releaseMediaPlayer() {
-    progressRunnable?.let { handler.removeCallbacks(it) }
-    progressRunnable = null
-    mediaPlayer?.release()
-    mediaPlayer = null
-    currentFilePath = null
   }
 
   /**
@@ -176,70 +153,6 @@ class MainActivity : TauriActivity() {
     }
   }
 
-  /**
-   * 通知 WebView 播放进度
-   */
-  private fun notifyProgress(currentTime: Double, duration: Double) {
-    webViewRef?.post {
-      webViewRef?.evaluateJavascript(
-        "window.dispatchEvent(new CustomEvent('android-audio-progress', { detail: { currentTime: $currentTime, duration: $duration } }))",
-        null
-      )
-    }
-  }
-
-  /**
-   * 通知 WebView 播放结束
-   */
-  private fun notifyEnded() {
-    webViewRef?.post {
-      webViewRef?.evaluateJavascript(
-        "window.dispatchEvent(new CustomEvent('android-audio-ended'))",
-        null
-      )
-    }
-  }
-
-  /**
-   * 通知 WebView 播放错误
-   */
-  private fun notifyError(message: String) {
-    webViewRef?.post {
-      val escapedMessage = message.replace("'", "\\'")
-      webViewRef?.evaluateJavascript(
-        "window.dispatchEvent(new CustomEvent('android-audio-error', { detail: { message: '$escapedMessage' } }))",
-        null
-      )
-    }
-  }
-
-  /**
-   * 开始进度更新
-   */
-  private fun startProgressUpdates() {
-    progressRunnable?.let { handler.removeCallbacks(it) }
-    progressRunnable = object : Runnable {
-      override fun run() {
-        mediaPlayer?.let { mp ->
-          if (mp.isPlaying) {
-            val currentTime = mp.currentPosition / 1000.0
-            val duration = mp.duration / 1000.0
-            notifyProgress(currentTime, duration)
-          }
-        }
-        handler.postDelayed(this, 250) // 每 250ms 更新一次
-      }
-    }
-    handler.post(progressRunnable!!)
-  }
-
-  /**
-   * 停止进度更新
-   */
-  private fun stopProgressUpdates() {
-    progressRunnable?.let { handler.removeCallbacks(it) }
-  }
-
   override fun onRequestPermissionsResult(
     requestCode: Int,
     permissions: Array<out String>,
@@ -286,115 +199,6 @@ class MainActivity : TauriActivity() {
       runOnUiThread {
         openAppSettings()
       }
-    }
-
-    // ========== 音频播放接口 ==========
-
-    @JavascriptInterface
-    fun playAudio(filePath: String) {
-      Log.d(TAG, "AndroidBridge.playAudio: $filePath")
-      runOnUiThread {
-        try {
-          // 如果是同一个文件且已经有 MediaPlayer，直接播放
-          if (currentFilePath == filePath && mediaPlayer != null) {
-            mediaPlayer?.start()
-            startProgressUpdates()
-            return@runOnUiThread
-          }
-
-          // 释放旧的 MediaPlayer
-          releaseMediaPlayer()
-
-          // 创建新的 MediaPlayer
-          val file = File(filePath)
-          if (!file.exists()) {
-            notifyError("File not found: $filePath")
-            return@runOnUiThread
-          }
-
-          mediaPlayer = MediaPlayer().apply {
-            setDataSource(filePath)
-            setOnPreparedListener { mp ->
-              mp.start()
-              startProgressUpdates()
-              val duration = mp.duration / 1000.0
-              notifyProgress(0.0, duration)
-            }
-            setOnCompletionListener {
-              stopProgressUpdates()
-              notifyEnded()
-            }
-            setOnErrorListener { _, what, extra ->
-              Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-              stopProgressUpdates()
-              notifyError("Playback error: $what")
-              true
-            }
-            prepareAsync()
-          }
-          currentFilePath = filePath
-        } catch (e: Exception) {
-          Log.e(TAG, "playAudio error", e)
-          notifyError(e.message ?: "Unknown error")
-        }
-      }
-    }
-
-    @JavascriptInterface
-    fun pauseAudio() {
-      Log.d(TAG, "AndroidBridge.pauseAudio")
-      runOnUiThread {
-        mediaPlayer?.pause()
-        stopProgressUpdates()
-      }
-    }
-
-    @JavascriptInterface
-    fun resumeAudio() {
-      Log.d(TAG, "AndroidBridge.resumeAudio")
-      runOnUiThread {
-        mediaPlayer?.start()
-        startProgressUpdates()
-      }
-    }
-
-    @JavascriptInterface
-    fun stopAudio() {
-      Log.d(TAG, "AndroidBridge.stopAudio")
-      runOnUiThread {
-        releaseMediaPlayer()
-      }
-    }
-
-    @JavascriptInterface
-    fun seekAudio(positionSeconds: Double) {
-      Log.d(TAG, "AndroidBridge.seekAudio: $positionSeconds")
-      runOnUiThread {
-        mediaPlayer?.seekTo((positionSeconds * 1000).toInt())
-      }
-    }
-
-    @JavascriptInterface
-    fun setVolume(volume: Float) {
-      Log.d(TAG, "AndroidBridge.setVolume: $volume")
-      runOnUiThread {
-        mediaPlayer?.setVolume(volume, volume)
-      }
-    }
-
-    @JavascriptInterface
-    fun isPlaying(): Boolean {
-      return mediaPlayer?.isPlaying ?: false
-    }
-
-    @JavascriptInterface
-    fun getCurrentPosition(): Double {
-      return (mediaPlayer?.currentPosition ?: 0) / 1000.0
-    }
-
-    @JavascriptInterface
-    fun getDuration(): Double {
-      return (mediaPlayer?.duration ?: 0) / 1000.0
     }
   }
 }
