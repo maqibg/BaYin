@@ -4,10 +4,10 @@
   "version": "1.1.6",
   "identifier": "com.hao.bayin",
   "build": {
-    "beforeDevCommand": "npm run dev --prefix src-ui",
-    "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "npm run build --prefix src-ui",
-    "frontendDist": "../src-ui/build"
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [
