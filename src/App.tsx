@@ -253,7 +253,7 @@ const LineIcon = ({ name, className }: { name: IconName; className?: string }) =
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M5 12h14" /><path d="M12 5v14" /></svg>;
   }
   if (name === "edit") {
-    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><rect width="18" height="18" x="3" y="3" rx="2" /><path d="m9 12 2 2 4-4" /></svg>;
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344" /><path d="m9 11 3 3L22 4" /></svg>;
   }
   if (name === "shuffle") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="m18 14 4 4-4 4" /><path d="m18 2 4 4-4 4" /><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22" /><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2" /><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45" /></svg>;
