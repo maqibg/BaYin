@@ -3,6 +3,7 @@ import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import * as ScrollArea from "@radix-ui/react-scroll-area";
 
 type Page =
   | "songs"
@@ -1787,52 +1788,58 @@ export default function App() {
         </div>
 
         <div className="songs-layout">
-          <div className="songs-card">
-            {filteredSongs.map((song, index) => {
-              const coverUrl = song.coverHash ? coverMap[song.coverHash] : undefined;
-              const active = song.id === currentSongId;
+          <ScrollArea.Root className="songs-scroll-root" type="always" scrollHideDelay={0}>
+            <ScrollArea.Viewport className="songs-card">
+              {filteredSongs.map((song, index) => {
+                const coverUrl = song.coverHash ? coverMap[song.coverHash] : undefined;
+                const active = song.id === currentSongId;
 
-              return (
-                <article
-                  key={song.id}
-                  className={`song-row ${active ? "active" : ""}`}
-                  onDoubleClick={() => {
-                    void playSongById(song.id, true);
-                  }}
-                >
-                  {showCover ? (
-                    <div className="song-cover" style={coverUrl ? undefined : createCoverStyle(index)}>
-                      {coverUrl ? (
-                        <img src={coverUrl} alt={song.title} className="song-cover-image" />
-                      ) : null}
+                return (
+                  <article
+                    key={song.id}
+                    className={`song-row ${active ? "active" : ""}`}
+                    onDoubleClick={() => {
+                      void playSongById(song.id, true);
+                    }}
+                  >
+                    {showCover ? (
+                      <div className="song-cover" style={coverUrl ? undefined : createCoverStyle(index)}>
+                        {coverUrl ? (
+                          <img src={coverUrl} alt={song.title} className="song-cover-image" />
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="song-info">
+                      <div className="song-title-line">
+                        <span className="song-title">{song.title}</span>
+                        {song.isHr ? <span className="song-tag hr">HR</span> : null}
+                        {song.isSq ? <span className="song-tag sq">SQ</span> : null}
+                      </div>
+                      <p className="song-subtitle">
+                        {song.artist} · {song.album}
+                      </p>
                     </div>
-                  ) : null}
 
-                  <div className="song-info">
-                    <div className="song-title-line">
-                      <span className="song-title">{song.title}</span>
-                      {song.isHr ? <span className="song-tag hr">HR</span> : null}
-                      {song.isSq ? <span className="song-tag sq">SQ</span> : null}
+                    <div className="song-row-actions">
+                      <button
+                        type="button"
+                        className="icon-btn subtle"
+                        aria-label="歌曲操作"
+                        onClick={() => addSongToPlaylist(song.id)}
+                      >
+                        <LineIcon name="more" />
+                      </button>
                     </div>
-                    <p className="song-subtitle">
-                      {song.artist} · {song.album}
-                    </p>
-                  </div>
-
-                  <div className="song-row-actions">
-                    <button
-                      type="button"
-                      className="icon-btn subtle"
-                      aria-label="歌曲操作"
-                      onClick={() => addSongToPlaylist(song.id)}
-                    >
-                      <LineIcon name="more" />
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+                  </article>
+                );
+              })}
+            </ScrollArea.Viewport>
+            <ScrollArea.Scrollbar className="songs-scrollbar" orientation="vertical">
+              <ScrollArea.Thumb className="songs-scrollbar-thumb" />
+            </ScrollArea.Scrollbar>
+            <ScrollArea.Corner className="songs-scrollbar-corner" />
+          </ScrollArea.Root>
 
           {!isMobile ? (
             <div className="alphabet-rail" aria-hidden>

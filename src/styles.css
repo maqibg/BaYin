@@ -425,32 +425,63 @@ button {
   min-height: 0;
 }
 
-.songs-card {
+.songs-scroll-root {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
   background: #f6f7f9;
   border: 1px solid #e4e8ee;
   border-radius: 11px;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  overflow: hidden;
 }
 
-.songs-card::-webkit-scrollbar {
-  width: 6px;
+.songs-card {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
 }
 
-.songs-card::-webkit-scrollbar-track {
-  background: transparent;
+.songs-scrollbar {
+  display: flex;
+  touch-action: none;
+  user-select: none;
+  transition: background-color 0.16s ease;
 }
 
-.songs-card::-webkit-scrollbar-thumb {
-  background: #c8ced8;
+.songs-scrollbar[data-orientation="vertical"] {
+  position: relative;
+  width: 12px;
+  padding: 12px 2px 3px;
+  background: #edf1f6;
+}
+
+.songs-scrollbar[data-orientation="vertical"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 5px solid #c9d0dc;
+}
+
+.songs-scrollbar-thumb {
+  flex: 1;
   border-radius: 999px;
+  background: #c5ccd8;
+  min-height: 36px;
 }
 
-.songs-card::-webkit-scrollbar-thumb:hover {
-  background: #a8b2bf;
+.songs-scrollbar-thumb:hover {
+  background: #adb7c7;
+}
+
+.songs-scrollbar-corner {
+  background: #edf1f6;
 }
 
 .song-row {
@@ -1699,6 +1730,7 @@ button {
 .theme-dark .topbar,
 .theme-dark .main-shell,
 .theme-dark .page-body,
+.theme-dark .songs-scroll-root,
 .theme-dark .songs-card,
 .theme-dark .cover-card,
 .theme-dark .scan-card,
@@ -1758,6 +1790,23 @@ button {
 
 .theme-dark .songs-count-icon {
   color: #8b99ad;
+}
+
+.theme-dark .songs-scrollbar,
+.theme-dark .songs-scrollbar-corner {
+  background: #1b283b;
+}
+
+.theme-dark .songs-scrollbar[data-orientation="vertical"]::before {
+  border-bottom-color: #4e6586;
+}
+
+.theme-dark .songs-scrollbar-thumb {
+  background: #4a607f;
+}
+
+.theme-dark .songs-scrollbar-thumb:hover {
+  background: #577198;
 }
 
 .theme-dark .search-input,
