@@ -368,6 +368,10 @@ button {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 45px;
 }
 
 .songs-toolbar {
@@ -415,17 +419,38 @@ button {
 
 .songs-layout {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .songs-card {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   background: #f6f7f9;
   border: 1px solid #e4e8ee;
   border-radius: 11px;
   overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.songs-card::-webkit-scrollbar {
+  width: 6px;
+}
+
+.songs-card::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.songs-card::-webkit-scrollbar-thumb {
+  background: #c8ced8;
+  border-radius: 999px;
+}
+
+.songs-card::-webkit-scrollbar-thumb:hover {
+  background: #a8b2bf;
 }
 
 .song-row {
