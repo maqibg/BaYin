@@ -165,6 +165,7 @@ interface PlaylistStoreItem {
 
 type PlayMode = "sequence" | "shuffle" | "repeat-one";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "addedAt";
+type AlbumSortKey = "title" | "artist" | "year" | "songCount";
 
 interface StreamInfoPayload {
   type?: string;
@@ -346,6 +347,13 @@ const SONG_SORT_OPTIONS: Array<{ key: SongSortKey; label: string }> = [
   { key: "album", label: "专辑" },
   { key: "duration", label: "时长" },
   { key: "addedAt", label: "添加日期" },
+];
+
+const ALBUM_SORT_OPTIONS: Array<{ key: AlbumSortKey; label: string }> = [
+  { key: "title", label: "标题" },
+  { key: "artist", label: "艺术家" },
+  { key: "year", label: "年份" },
+  { key: "songCount", label: "歌曲数量" },
 ];
 
 const FALLBACK_COVERS = [
@@ -594,10 +602,14 @@ export default function App() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [searchQuery, setSearchQuery] = useState("");
   const [songsSearchMode, setSongsSearchMode] = useState(false);
+  const [albumSearchQuery, setAlbumSearchQuery] = useState("");
+  const [albumsSearchMode, setAlbumsSearchMode] = useState(false);
   const [songsSelectMode, setSongsSelectMode] = useState(false);
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [songsSortKey, setSongsSortKey] = useState<SongSortKey>("title");
   const [songsSortDialogOpen, setSongsSortDialogOpen] = useState(false);
+  const [albumsSortKey, setAlbumsSortKey] = useState<AlbumSortKey>("title");
+  const [albumsSortDialogOpen, setAlbumsSortDialogOpen] = useState(false);
   const [songsBatchPlaylistDialogOpen, setSongsBatchPlaylistDialogOpen] = useState(false);
   const [songsBatchCreateMode, setSongsBatchCreateMode] = useState(false);
   const [songsBatchPlaylistName, setSongsBatchPlaylistName] = useState("");
@@ -709,7 +721,22 @@ export default function App() {
         setSongsBatchPlaylistName("");
       }
     }
+
+    if (page !== "albums") {
+      if (albumSearchQuery) {
+        setAlbumSearchQuery("");
+      }
+      if (albumsSearchMode) {
+        setAlbumsSearchMode(false);
+      }
+      if (albumsSortDialogOpen) {
+        setAlbumsSortDialogOpen(false);
+      }
+    }
   }, [
+    albumSearchQuery,
+    albumsSearchMode,
+    albumsSortDialogOpen,
     page,
     searchQuery,
     selectedSongIds.length,
@@ -726,6 +753,12 @@ export default function App() {
       searchInputRef.current?.focus();
     }
   }, [page, songsSearchMode]);
+
+  useEffect(() => {
+    if (page === "albums" && albumsSearchMode) {
+      searchInputRef.current?.focus();
+    }
+  }, [albumsSearchMode, page]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_KEY);
@@ -1248,7 +1281,7 @@ export default function App() {
   }, [songsSelectMode, sortedSongs]);
 
   const filteredAlbums = useMemo(() => {
-    const keyword = searchQuery.trim().toLowerCase();
+    const keyword = albumSearchQuery.trim().toLowerCase();
     if (!keyword) {
       return albums;
     }
@@ -1257,7 +1290,70 @@ export default function App() {
       const haystack = `${album.name} ${album.artist}`.toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [albums, searchQuery]);
+  }, [albumSearchQuery, albums]);
+
+  const albumYearMap = useMemo(() => {
+    const yearMap = new Map<string, number>();
+
+    songs.forEach((song) => {
+      const modified = song.fileModified ?? 0;
+      if (!modified) {
+        return;
+      }
+
+      const timestamp = modified > 1_000_000_000_000 ? modified : modified * 1000;
+      const year = new Date(timestamp).getFullYear();
+      if (!Number.isFinite(year) || year < 1900) {
+        return;
+      }
+
+      const previousYear = yearMap.get(song.album) ?? 0;
+      if (year > previousYear) {
+        yearMap.set(song.album, year);
+      }
+    });
+
+    return yearMap;
+  }, [songs]);
+
+  const sortedAlbums = useMemo(() => {
+    const sorted = [...filteredAlbums];
+    const compareText = (left: string, right: string) => textSorter.compare(left, right);
+
+    sorted.sort((leftAlbum, rightAlbum) => {
+      if (albumsSortKey === "title") {
+        return (
+          compareText(leftAlbum.name, rightAlbum.name)
+          || compareText(leftAlbum.artist, rightAlbum.artist)
+        );
+      }
+
+      if (albumsSortKey === "artist") {
+        return (
+          compareText(leftAlbum.artist, rightAlbum.artist)
+          || compareText(leftAlbum.name, rightAlbum.name)
+        );
+      }
+
+      if (albumsSortKey === "year") {
+        const leftYear = albumYearMap.get(leftAlbum.name) ?? 0;
+        const rightYear = albumYearMap.get(rightAlbum.name) ?? 0;
+        return (
+          rightYear - leftYear
+          || compareText(leftAlbum.name, rightAlbum.name)
+          || compareText(leftAlbum.artist, rightAlbum.artist)
+        );
+      }
+
+      return (
+        rightAlbum.songCount - leftAlbum.songCount
+        || compareText(leftAlbum.name, rightAlbum.name)
+        || compareText(leftAlbum.artist, rightAlbum.artist)
+      );
+    });
+
+    return sorted;
+  }, [albumYearMap, albumsSortKey, filteredAlbums, textSorter]);
 
   const filteredArtists = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -1672,6 +1768,16 @@ export default function App() {
     setSearchQuery("");
   };
 
+  const openAlbumsSearch = () => {
+    setAlbumsSearchMode(true);
+    setAlbumsSortDialogOpen(false);
+  };
+
+  const closeAlbumsSearch = () => {
+    setAlbumsSearchMode(false);
+    setAlbumSearchQuery("");
+  };
+
   const openSongsSelectMode = () => {
     setSongsSortDialogOpen(false);
     setSongsBatchPlaylistDialogOpen(false);
@@ -1738,6 +1844,19 @@ export default function App() {
   const updateSongsSort = (nextSortKey: SongSortKey) => {
     setSongsSortKey(nextSortKey);
     setSongsSortDialogOpen(false);
+  };
+
+  const openAlbumsSortDialog = () => {
+    setAlbumsSortDialogOpen(true);
+  };
+
+  const closeAlbumsSortDialog = () => {
+    setAlbumsSortDialogOpen(false);
+  };
+
+  const updateAlbumsSort = (nextSortKey: AlbumSortKey) => {
+    setAlbumsSortKey(nextSortKey);
+    setAlbumsSortDialogOpen(false);
   };
 
   const openSongsBatchPlaylistDialog = () => {
@@ -2219,6 +2338,8 @@ export default function App() {
 
   const shouldShowBack = page === "settings-ui";
   const showSongsSearchBar = page === "songs" && songsSearchMode;
+  const showAlbumsSearchBar = page === "albums" && albumsSearchMode;
+  const showTopSearchBar = showSongsSearchBar || showAlbumsSearchBar;
 
   const openExternalUrl = useCallback(
     async (url: string) => {
@@ -2312,7 +2433,20 @@ export default function App() {
       );
     }
 
-    if (page === "albums" || page === "artists" || page === "about") {
+    if (page === "albums") {
+      return (
+        <>
+          <button type="button" className="icon-btn" aria-label="搜索专辑" onClick={openAlbumsSearch}>
+            <LineIcon name="search" />
+          </button>
+          <button type="button" className="icon-btn" aria-label="专辑排序" onClick={openAlbumsSortDialog}>
+            <LineIcon name="more" />
+          </button>
+        </>
+      );
+    }
+
+    if (page === "artists" || page === "about") {
       return (
         <button type="button" className="icon-btn" aria-label="更多">
           <LineIcon name="more" />
@@ -2530,15 +2664,35 @@ export default function App() {
   };
 
   const renderAlbumsPage = () => {
-    if (!filteredAlbums.length) {
+    const hasSearchKeyword = Boolean(albumSearchQuery.trim());
+
+    if (albumsSearchMode && !hasSearchKeyword) {
+      return (
+        <section className="songs-search-empty" data-no-drag="true">
+          <LineIcon name="search" className="songs-search-empty-icon" />
+          <p>输入关键词开始搜索</p>
+        </section>
+      );
+    }
+
+    if (!sortedAlbums.length) {
+      if (albumsSearchMode) {
+        return (
+          <section className="songs-search-empty" data-no-drag="true">
+            <LineIcon name="search" className="songs-search-empty-icon" />
+            <p>未找到匹配结果</p>
+          </section>
+        );
+      }
+
       return renderEmpty("尚未扫描音乐", "扫描音乐", () => go("scan"));
     }
 
     return (
       <section className="cover-grid-page">
         <div className="cover-grid-layout">
-          <div className="cover-grid">
-            {filteredAlbums.map((album, index) => {
+          <div className="cover-grid albums-grid">
+            {sortedAlbums.map((album, index) => {
               const coverUrl = album.coverHash
                 ? coverMap[album.coverHash]
                 : album.streamCoverUrl || undefined;
@@ -2555,14 +2709,6 @@ export default function App() {
               );
             })}
           </div>
-
-          {!isMobile ? (
-            <div className="alphabet-rail" aria-hidden>
-              {ALPHABET_INDEX.map((item) => (
-                <span key={item}>{item}</span>
-              ))}
-            </div>
-          ) : null}
         </div>
       </section>
     );
@@ -3257,7 +3403,7 @@ export default function App() {
             ) : null}
           </div>
 
-          <div className={`topbar-main ${showSongsSearchBar ? "searching" : ""}`}>
+          <div className={`topbar-main ${showTopSearchBar ? "searching" : ""}`}>
             {showSongsSearchBar ? (
               <div className="songs-search-topbar" data-no-drag="true">
                 <label className="songs-search-field">
@@ -3279,6 +3425,27 @@ export default function App() {
                   取消
                 </button>
               </div>
+            ) : showAlbumsSearchBar ? (
+              <div className="songs-search-topbar" data-no-drag="true">
+                <label className="songs-search-field">
+                  <LineIcon name="search" />
+                  <input
+                    ref={searchInputRef}
+                    className="songs-search-input"
+                    value={albumSearchQuery}
+                    onChange={(event) => setAlbumSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        closeAlbumsSearch();
+                      }
+                    }}
+                    placeholder="搜索专辑、艺术家"
+                  />
+                </label>
+                <button type="button" className="songs-search-cancel" onClick={closeAlbumsSearch}>
+                  取消
+                </button>
+              </div>
             ) : (
               <>
                 <div className="topbar-left">
@@ -3294,7 +3461,7 @@ export default function App() {
                     </button>
                   ) : null}
 
-                  <h1 className={`page-title ${page === "songs" ? "songs-title" : ""}`}>{PAGE_TITLE[page]}</h1>
+                  <h1 className={`page-title ${page === "songs" || page === "albums" ? "songs-title" : ""}`}>{PAGE_TITLE[page]}</h1>
                 </div>
 
                 <div className="page-header-actions" data-no-drag="true">{headerActions}</div>
@@ -3462,6 +3629,24 @@ export default function App() {
                 type="button"
                 className={`songs-sort-option ${songsSortKey === option.key ? "active" : ""}`}
                 onClick={() => updateSongsSort(option.key)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </section>
+        </div>
+      ) : null}
+
+      {albumsSortDialogOpen ? (
+        <div className="overlay" onClick={closeAlbumsSortDialog}>
+          <section className="songs-sort-dialog" data-no-drag="true" onClick={(event) => event.stopPropagation()}>
+            <h3>排序</h3>
+            {ALBUM_SORT_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={`songs-sort-option ${albumsSortKey === option.key ? "active" : ""}`}
+                onClick={() => updateAlbumsSort(option.key)}
               >
                 {option.label}
               </button>

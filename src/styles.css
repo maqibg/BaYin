@@ -858,6 +858,10 @@ button {
   grid-template-columns: repeat(auto-fill, minmax(174px, 1fr));
 }
 
+.cover-grid.albums-grid {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+}
+
 .cover-card {
   background: #fff;
   border: 1px solid #e5eaf2;
@@ -893,6 +897,25 @@ button {
 .cover-card p {
   color: #7f8998;
   font-size: 13px;
+}
+
+.album-card h3,
+.album-card p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-card .cover-meta {
+  margin-top: 4px;
+}
+
+.theme-light .album-card h3 {
+  color: #18212f;
+}
+
+.theme-dark .album-card h3 {
+  color: #dce4f2;
 }
 
 .playlist-page {
@@ -2268,6 +2291,7 @@ button {
 .theme-dark .sidebar-item,
 .theme-dark .song-title,
 .theme-dark .player-title,
+.theme-dark .cover-card h3,
 .theme-dark .stats-grid strong,
 .theme-dark .settings-item {
   color: #dce4f2;
