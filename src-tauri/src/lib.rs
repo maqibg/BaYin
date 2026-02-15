@@ -3,6 +3,7 @@ mod db;
 mod models;
 mod utils;
 mod watcher;
+mod audio_engine;
 
 use commands::{
     db_clear_all_songs, db_clear_scan_config, db_clear_stream_servers, db_delete_songs_by_source,
@@ -18,6 +19,10 @@ use commands::{
     cleanup_missing_songs, CoverCacheState,
     // File watcher commands
     start_file_watcher, stop_file_watcher,
+    // Audio engine commands
+    audio_play, audio_pause, audio_resume, audio_stop, audio_seek,
+    audio_set_volume, audio_set_eq_bands, audio_set_eq_enabled,
+    audio_enable_visualization, audio_get_state,
 };
 use db::DbState;
 use utils::cover::CoverCache;
@@ -43,21 +48,6 @@ fn set_tray_language(app: tauri::AppHandle, lang: String) {
         let exit_item = MenuItem::with_id(&app, "exit", exit_label, true, None::<&str>).unwrap();
         let menu = Menu::with_items(&app, &[&show_item, &exit_item]).unwrap();
         let _ = tray.set_menu(Some(menu));
-    }
-}
-
-/// Get MIME type from file extension
-fn get_mime_type(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("mp3") => "audio/mpeg",
-        Some("flac") => "audio/flac",
-        Some("wav") => "audio/wav",
-        Some("ogg") => "audio/ogg",
-        Some("m4a") | Some("aac") => "audio/mp4",
-        Some("opus") => "audio/opus",
-        Some("wma") => "audio/x-ms-wma",
-        Some("aiff") | Some("aif") => "audio/aiff",
-        _ => "application/octet-stream",
     }
 }
 
@@ -123,7 +113,18 @@ pub fn run() {
             stop_file_watcher,
             // 托盘命令
             #[cfg(desktop)]
-            set_tray_language
+            set_tray_language,
+            // 音频引擎命令
+            audio_play,
+            audio_pause,
+            audio_resume,
+            audio_stop,
+            audio_seek,
+            audio_set_volume,
+            audio_set_eq_bands,
+            audio_set_eq_enabled,
+            audio_enable_visualization,
+            audio_get_state
         ])
         .on_window_event(|_window, _event| {
             #[cfg(desktop)]
@@ -163,6 +164,13 @@ pub fn run() {
             {
                 use watcher::desktop::{FileWatcherState, WatcherState};
                 app.manage(FileWatcherState(Mutex::new(WatcherState::new())));
+            }
+
+            // 初始化音频引擎
+            {
+                use audio_engine::engine::AudioEngine;
+                let audio_engine = AudioEngine::new(app.handle().clone());
+                app.manage(audio_engine::AudioEngineState::new(audio_engine));
             }
 
             // 桌面端：创建系统托盘
