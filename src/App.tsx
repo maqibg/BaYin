@@ -565,6 +565,7 @@ export default function App() {
 
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [searchQuery, setSearchQuery] = useState("");
+  const [songsSearchMode, setSongsSearchMode] = useState(false);
 
   const [streamServers, setStreamServers] = useState<DbStreamServer[]>([]);
   const [streamModalOpen, setStreamModalOpen] = useState(false);
@@ -598,6 +599,7 @@ export default function App() {
   const [lyricsError, setLyricsError] = useState<string>("");
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(isMobileWidth());
@@ -614,10 +616,21 @@ export default function App() {
   }, [isMobile]);
 
   useEffect(() => {
-    if (page !== "songs" && searchQuery) {
-      setSearchQuery("");
+    if (page !== "songs") {
+      if (searchQuery) {
+        setSearchQuery("");
+      }
+      if (songsSearchMode) {
+        setSongsSearchMode(false);
+      }
     }
-  }, [page, searchQuery]);
+  }, [page, searchQuery, songsSearchMode]);
+
+  useEffect(() => {
+    if (page === "songs" && songsSearchMode) {
+      searchInputRef.current?.focus();
+    }
+  }, [page, songsSearchMode]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_KEY);
@@ -1277,6 +1290,15 @@ export default function App() {
     }
   };
 
+  const openSongsSearch = () => {
+    setSongsSearchMode(true);
+  };
+
+  const closeSongsSearch = () => {
+    setSongsSearchMode(false);
+    setSearchQuery("");
+  };
+
   const openCreatePlaylistDialog = () => {
     setDialogMode("create");
     setDialogInput("");
@@ -1637,6 +1659,7 @@ export default function App() {
   };
 
   const shouldShowBack = page === "settings-ui";
+  const showSongsSearchBar = page === "songs" && songsSearchMode;
 
   const openExternalUrl = useCallback(
     async (url: string) => {
@@ -1714,9 +1737,13 @@ export default function App() {
 
   const headerActions = (() => {
     if (page === "songs") {
+      if (songsSearchMode) {
+        return null;
+      }
+
       return (
         <>
-          <button type="button" className="icon-btn" aria-label="搜索">
+          <button type="button" className="icon-btn" aria-label="搜索" onClick={openSongsSearch}>
             <LineIcon name="search" />
           </button>
           <button type="button" className="icon-btn" aria-label="更多">
@@ -1765,7 +1792,27 @@ export default function App() {
   );
 
   const renderSongsPage = () => {
+    const hasSearchKeyword = Boolean(searchQuery.trim());
+
+    if (songsSearchMode && !hasSearchKeyword) {
+      return (
+        <section className="songs-search-empty" data-no-drag="true">
+          <LineIcon name="search" className="songs-search-empty-icon" />
+          <p>输入关键词开始搜索</p>
+        </section>
+      );
+    }
+
     if (!filteredSongs.length) {
+      if (songsSearchMode) {
+        return (
+          <section className="songs-search-empty" data-no-drag="true">
+            <LineIcon name="search" className="songs-search-empty-icon" />
+            <p>未找到匹配结果</p>
+          </section>
+        );
+      }
+
       return renderEmpty("未找到音乐", "扫描音乐", () => go("scan"));
     }
 
@@ -2581,24 +2628,49 @@ export default function App() {
             ) : null}
           </div>
 
-          <div className="topbar-main">
-            <div className="topbar-left">
-              {shouldShowBack ? (
-                <button type="button" className="icon-btn" onClick={() => go("settings")}>
-                  <LineIcon name="back" />
+          <div className={`topbar-main ${showSongsSearchBar ? "searching" : ""}`}>
+            {showSongsSearchBar ? (
+              <div className="songs-search-topbar" data-no-drag="true">
+                <label className="songs-search-field">
+                  <LineIcon name="search" />
+                  <input
+                    ref={searchInputRef}
+                    className="songs-search-input"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        closeSongsSearch();
+                      }
+                    }}
+                    placeholder="搜索歌曲、艺术家、专辑"
+                  />
+                </label>
+                <button type="button" className="songs-search-cancel" onClick={closeSongsSearch}>
+                  取消
                 </button>
-              ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="topbar-left">
+                  {shouldShowBack ? (
+                    <button type="button" className="icon-btn" onClick={() => go("settings")}>
+                      <LineIcon name="back" />
+                    </button>
+                  ) : null}
 
-              {!shouldShowBack && isMobile ? (
-                <button type="button" className="icon-btn" onClick={() => setSidebarOpen(true)}>
-                  <LineIcon name="menu" />
-                </button>
-              ) : null}
+                  {!shouldShowBack && isMobile ? (
+                    <button type="button" className="icon-btn" onClick={() => setSidebarOpen(true)}>
+                      <LineIcon name="menu" />
+                    </button>
+                  ) : null}
 
-              <h1>{PAGE_TITLE[page]}</h1>
-            </div>
+                  <h1 className={`page-title ${page === "songs" ? "songs-title" : ""}`}>{PAGE_TITLE[page]}</h1>
+                </div>
 
-            <div className="page-header-actions" data-no-drag="true">{headerActions}</div>
+                <div className="page-header-actions" data-no-drag="true">{headerActions}</div>
+              </>
+            )}
           </div>
         </header>
 

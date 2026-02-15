@@ -210,6 +210,63 @@ button {
   padding: 0 8px 0 24px;
 }
 
+.topbar-main.searching {
+  justify-content: flex-start;
+  padding: 0 14px 0 18px;
+}
+
+.songs-search-topbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.songs-search-field {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid #e8edf5;
+  border-radius: 10px;
+  background: #f1f4f9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.songs-search-field .line-icon {
+  width: 18px;
+  height: 18px;
+  color: #9ba6b6;
+}
+
+.songs-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #5a6575;
+  font-size: 15px;
+}
+
+.songs-search-input::placeholder {
+  color: #9ca7b7;
+}
+
+.songs-search-cancel {
+  flex-shrink: 0;
+  color: #4d8ad4;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 0 3px;
+}
+
+.songs-search-cancel:hover {
+  color: #397fd4;
+}
+
 .topbar-left {
   display: flex;
   align-items: center;
@@ -217,12 +274,23 @@ button {
   min-width: 0;
 }
 
-.topbar-left h1 {
+.topbar-left .page-title {
   margin: 0;
   font-size: 42px;
   font-weight: 800;
   letter-spacing: 0.2px;
   color: #111827;
+}
+
+.topbar-left .songs-title {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  width: 48px;
+  height: 26px;
+  font-size: 24px;
+  line-height: 26px;
+  flex-shrink: 0;
 }
 
 .window-controls {
@@ -374,6 +442,30 @@ button {
   padding-bottom: 45px;
 }
 
+.songs-search-empty {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #bcc4d1;
+}
+
+.songs-search-empty-icon {
+  width: 54px;
+  height: 54px;
+  stroke-width: 1.9;
+}
+
+.songs-search-empty p {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1;
+  color: #c0c8d5;
+}
+
 .songs-toolbar {
   display: flex;
   align-items: center;
@@ -390,30 +482,36 @@ button {
 }
 
 .songs-count-main {
-  font-size: 36px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  font-size: 20px;
+  line-height: 20px;
   font-weight: 500;
   color: #687387;
 }
 
 .songs-count small {
-  margin-top: 7px;
-  font-size: 17px;
-  line-height: 1;
-  color: #97a2b1;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0;
+  height: 20px;
+  font-size: 20px;
+  line-height: 20px;
+  color: #687387;
 }
 
 .songs-count-icon {
-  width: 22px;
-  height: 22px;
+  width: 25px;
+  height: 25px;
   display: inline-grid;
   place-items: center;
-  color: #697486;
+  color: #4f5a6b;
 }
 
 .songs-count-icon .line-icon {
-  width: 18px;
-  height: 18px;
+  width: 25px;
+  height: 25px;
   stroke-width: 2.1;
 }
 
@@ -1792,6 +1890,31 @@ button {
   color: #8b99ad;
 }
 
+.theme-dark .songs-search-field {
+  background: #121b2a;
+  border-color: #2f3e57;
+}
+
+.theme-dark .songs-search-input {
+  color: #dce4f2;
+}
+
+.theme-dark .songs-search-input::placeholder {
+  color: #8ca0ba;
+}
+
+.theme-dark .songs-search-cancel {
+  color: #7db0f8;
+}
+
+.theme-dark .songs-search-empty {
+  color: #8798b1;
+}
+
+.theme-dark .songs-search-empty p {
+  color: #8fa1ba;
+}
+
 .theme-dark .songs-scrollbar,
 .theme-dark .songs-scrollbar-corner {
   background: #1b283b;
@@ -2242,8 +2365,20 @@ button {
     padding: 0 14px;
   }
 
-  .topbar-left h1 {
+  .topbar-left .page-title {
     font-size: 30px;
+  }
+
+  .topbar-main.searching {
+    padding: 0 10px;
+  }
+
+  .songs-search-field {
+    height: 36px;
+  }
+
+  .songs-search-cancel {
+    font-size: 14px;
   }
 
   .window-controls {
