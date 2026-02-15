@@ -95,6 +95,21 @@ pub fn db_delete_songs_by_source(
         .map_err(|e| e.to_string())
 }
 
+/// Delete songs by ids
+#[tauri::command]
+pub fn db_delete_songs_by_ids(db: State<'_, DbState>, song_ids: Vec<String>) -> Result<usize, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let mut affected = 0usize;
+    for song_id in song_ids {
+        affected += conn
+            .execute("DELETE FROM songs WHERE id = ?1", [&song_id])
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(affected)
+}
+
 /// Clear all songs
 #[tauri::command]
 pub fn db_clear_all_songs(db: State<'_, DbState>) -> Result<usize, String> {

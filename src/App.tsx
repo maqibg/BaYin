@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
+import * as Checkbox from "@radix-ui/react-checkbox";
 
 type Page =
   | "songs"
@@ -163,6 +164,7 @@ interface PlaylistStoreItem {
 }
 
 type PlayMode = "sequence" | "shuffle" | "repeat-one";
+type SongSortKey = "title" | "artist" | "album" | "duration" | "addedAt";
 
 interface StreamInfoPayload {
   type?: string;
@@ -207,6 +209,8 @@ type IconName =
   | "repeat-one"
   | "lyrics"
   | "queue"
+  | "playlist-add"
+  | "trash"
   | "volume"
   | "volume-mute"
   | "cloud-add"
@@ -283,6 +287,12 @@ const LineIcon = ({ name, className }: { name: IconName; className?: string }) =
   if (name === "queue") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M16 5H3" /><path d="M11 12H3" /><path d="M11 19H3" /><path d="M21 16V5" /><circle cx="18" cy="16" r="3" /></svg>;
   }
+  if (name === "playlist-add") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M4 6h10" /><path d="M4 12h10" /><path d="M4 18h6" /><path d="M16 14v6" /><path d="M13 17h6" /></svg>;
+  }
+  if (name === "trash") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></svg>;
+  }
   if (name === "volume") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /><path d="M16 9a5 5 0 0 1 0 6" /><path d="M19.364 18.364a9 9 0 0 0 0-12.728" /></svg>;
   }
@@ -329,6 +339,14 @@ const PAGE_TITLE: Record<Page, string> = {
   "settings-ui": "用户界面",
   about: "关于",
 };
+
+const SONG_SORT_OPTIONS: Array<{ key: SongSortKey; label: string }> = [
+  { key: "title", label: "标题" },
+  { key: "artist", label: "艺术家" },
+  { key: "album", label: "专辑" },
+  { key: "duration", label: "时长" },
+  { key: "addedAt", label: "添加日期" },
+];
 
 const FALLBACK_COVERS = [
   "linear-gradient(135deg,#596cff,#303b90)",
@@ -515,6 +533,16 @@ function formatTime(seconds: number): string {
   return `${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
 }
 
+function resolveSongAlphabet(title: string): string {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) {
+    return "0";
+  }
+
+  const firstChar = trimmedTitle.charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(firstChar) ? firstChar : "0";
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>("songs");
   const [isMobile, setIsMobile] = useState(isMobileWidth);
@@ -566,6 +594,13 @@ export default function App() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [searchQuery, setSearchQuery] = useState("");
   const [songsSearchMode, setSongsSearchMode] = useState(false);
+  const [songsSelectMode, setSongsSelectMode] = useState(false);
+  const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
+  const [songsSortKey, setSongsSortKey] = useState<SongSortKey>("title");
+  const [songsSortDialogOpen, setSongsSortDialogOpen] = useState(false);
+  const [songsBatchPlaylistDialogOpen, setSongsBatchPlaylistDialogOpen] = useState(false);
+  const [songsBatchCreateMode, setSongsBatchCreateMode] = useState(false);
+  const [songsBatchPlaylistName, setSongsBatchPlaylistName] = useState("");
 
   const [streamServers, setStreamServers] = useState<DbStreamServer[]>([]);
   const [streamModalOpen, setStreamModalOpen] = useState(false);
@@ -600,6 +635,15 @@ export default function App() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const songRowElementMapRef = useRef<Map<string, HTMLElement>>(new Map());
+  const songsAlphabetRailRef = useRef<HTMLDivElement | null>(null);
+  const songsAlphabetItemElementMapRef = useRef<Map<string, HTMLSpanElement>>(new Map());
+  const songsAlphabetHideTimerRef = useRef<number | null>(null);
+  const songsAlphabetDraggingRef = useRef(false);
+  const songsAlphabetLastScrolledRef = useRef<string | null>(null);
+
+  const [songsAlphabetActiveLetter, setSongsAlphabetActiveLetter] = useState<string | null>(null);
+  const [songsAlphabetToastVisible, setSongsAlphabetToastVisible] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(isMobileWidth());
@@ -616,6 +660,29 @@ export default function App() {
   }, [isMobile]);
 
   useEffect(() => {
+    return () => {
+      if (songsAlphabetHideTimerRef.current !== null) {
+        window.clearTimeout(songsAlphabetHideTimerRef.current);
+        songsAlphabetHideTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (page !== "songs") {
+      songsAlphabetDraggingRef.current = false;
+      songsAlphabetLastScrolledRef.current = null;
+      setSongsAlphabetToastVisible(false);
+      setSongsAlphabetActiveLetter(null);
+
+      if (songsAlphabetHideTimerRef.current !== null) {
+        window.clearTimeout(songsAlphabetHideTimerRef.current);
+        songsAlphabetHideTimerRef.current = null;
+      }
+    }
+  }, [page]);
+
+  useEffect(() => {
     if (page !== "songs") {
       if (searchQuery) {
         setSearchQuery("");
@@ -623,8 +690,36 @@ export default function App() {
       if (songsSearchMode) {
         setSongsSearchMode(false);
       }
+      if (songsSortDialogOpen) {
+        setSongsSortDialogOpen(false);
+      }
+      if (songsSelectMode) {
+        setSongsSelectMode(false);
+      }
+      if (selectedSongIds.length) {
+        setSelectedSongIds([]);
+      }
+      if (songsBatchPlaylistDialogOpen) {
+        setSongsBatchPlaylistDialogOpen(false);
+      }
+      if (songsBatchCreateMode) {
+        setSongsBatchCreateMode(false);
+      }
+      if (songsBatchPlaylistName) {
+        setSongsBatchPlaylistName("");
+      }
     }
-  }, [page, searchQuery, songsSearchMode]);
+  }, [
+    page,
+    searchQuery,
+    selectedSongIds.length,
+    songsBatchCreateMode,
+    songsBatchPlaylistDialogOpen,
+    songsBatchPlaylistName,
+    songsSearchMode,
+    songsSelectMode,
+    songsSortDialogOpen,
+  ]);
 
   useEffect(() => {
     if (page === "songs" && songsSearchMode) {
@@ -865,6 +960,292 @@ export default function App() {
       return haystack.includes(keyword);
     });
   }, [searchQuery, songs]);
+
+  const textSorter = useMemo(
+    () =>
+      new Intl.Collator("zh-CN", {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    [],
+  );
+
+  const sortedSongs = useMemo(() => {
+    const sorted = [...filteredSongs];
+    const compareText = (left: string, right: string) => textSorter.compare(left, right);
+
+    sorted.sort((leftSong, rightSong) => {
+      if (songsSortKey === "title") {
+        return (
+          compareText(leftSong.title, rightSong.title)
+          || compareText(leftSong.artist, rightSong.artist)
+          || compareText(leftSong.album, rightSong.album)
+        );
+      }
+
+      if (songsSortKey === "artist") {
+        return (
+          compareText(leftSong.artist, rightSong.artist)
+          || compareText(leftSong.title, rightSong.title)
+          || compareText(leftSong.album, rightSong.album)
+        );
+      }
+
+      if (songsSortKey === "album") {
+        return (
+          compareText(leftSong.album, rightSong.album)
+          || compareText(leftSong.title, rightSong.title)
+          || compareText(leftSong.artist, rightSong.artist)
+        );
+      }
+
+      if (songsSortKey === "duration") {
+        return (
+          leftSong.duration - rightSong.duration
+          || compareText(leftSong.title, rightSong.title)
+          || compareText(leftSong.artist, rightSong.artist)
+        );
+      }
+
+      return (
+        (rightSong.fileModified ?? 0) - (leftSong.fileModified ?? 0)
+        || compareText(leftSong.title, rightSong.title)
+        || compareText(leftSong.artist, rightSong.artist)
+      );
+    });
+
+    return sorted;
+  }, [filteredSongs, songsSortKey, textSorter]);
+
+  useEffect(() => {
+    songsAlphabetLastScrolledRef.current = null;
+  }, [sortedSongs]);
+
+  const songsAlphabetStartMap = useMemo(() => {
+    const map = new Map<string, string>();
+
+    sortedSongs.forEach((song) => {
+      const alphabet = resolveSongAlphabet(song.title);
+      if (!map.has(alphabet)) {
+        map.set(alphabet, song.id);
+      }
+    });
+
+    return map;
+  }, [sortedSongs]);
+
+  const clearSongsAlphabetHideTimer = useCallback(() => {
+    if (songsAlphabetHideTimerRef.current !== null) {
+      window.clearTimeout(songsAlphabetHideTimerRef.current);
+      songsAlphabetHideTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleSongsAlphabetHide = useCallback(() => {
+    clearSongsAlphabetHideTimer();
+    songsAlphabetHideTimerRef.current = window.setTimeout(() => {
+      setSongsAlphabetToastVisible(false);
+      songsAlphabetHideTimerRef.current = null;
+    }, 460);
+  }, [clearSongsAlphabetHideTimer]);
+
+  const scrollSongsToAlphabet = useCallback(
+    (alphabet: string, options?: { behavior?: ScrollBehavior; force?: boolean }) => {
+      if (!sortedSongs.length) {
+        return;
+      }
+
+      clearSongsAlphabetHideTimer();
+      setSongsAlphabetToastVisible(true);
+      setSongsAlphabetActiveLetter((previous) => (previous === alphabet ? previous : alphabet));
+
+      if (!options?.force && songsAlphabetLastScrolledRef.current === alphabet) {
+        return;
+      }
+
+      let targetSongId = songsAlphabetStartMap.get(alphabet);
+
+      if (!targetSongId) {
+        const alphabetIndex = ALPHABET_INDEX.indexOf(alphabet);
+        const maxAlphabetIndex = ALPHABET_INDEX.length - 1;
+        const scrollPercent = maxAlphabetIndex > 0 && alphabetIndex >= 0
+          ? alphabetIndex / maxAlphabetIndex
+          : 0;
+        const approxSongIndex = Math.min(
+          sortedSongs.length - 1,
+          Math.max(0, Math.round(scrollPercent * (sortedSongs.length - 1))),
+        );
+        targetSongId = sortedSongs[approxSongIndex]?.id;
+      }
+
+      if (!targetSongId) {
+        return;
+      }
+
+      const targetRowElement = songRowElementMapRef.current.get(targetSongId);
+      if (targetRowElement) {
+        songsAlphabetLastScrolledRef.current = alphabet;
+        targetRowElement.scrollIntoView({
+          block: "start",
+          behavior: options?.behavior ?? "auto",
+        });
+      }
+    },
+    [clearSongsAlphabetHideTimer, songsAlphabetStartMap, sortedSongs],
+  );
+
+  const pickSongsAlphabetByPointer = useCallback((clientY: number): string | null => {
+    let nearestAlphabet: string | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    for (const alphabet of ALPHABET_INDEX) {
+      const itemElement = songsAlphabetItemElementMapRef.current.get(alphabet);
+      if (!itemElement) {
+        continue;
+      }
+
+      const itemRect = itemElement.getBoundingClientRect();
+      if (itemRect.height <= 0) {
+        continue;
+      }
+
+      if (clientY >= itemRect.top && clientY <= itemRect.bottom) {
+        return alphabet;
+      }
+
+      const distance = Math.abs(clientY - (itemRect.top + itemRect.height / 2));
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestAlphabet = alphabet;
+      }
+    }
+
+    if (nearestAlphabet) {
+      return nearestAlphabet;
+    }
+
+    const railElement = songsAlphabetRailRef.current;
+    if (!railElement) {
+      return null;
+    }
+
+    const railRect = railElement.getBoundingClientRect();
+    if (railRect.height <= 0) {
+      return null;
+    }
+
+    const clampedY = Math.min(railRect.bottom - 1, Math.max(railRect.top, clientY));
+    const relativeY = (clampedY - railRect.top) / railRect.height;
+    const targetIndex = Math.min(
+      ALPHABET_INDEX.length - 1,
+      Math.max(0, Math.round(relativeY * (ALPHABET_INDEX.length - 1))),
+    );
+
+    return ALPHABET_INDEX[targetIndex] ?? null;
+  }, []);
+
+  const handleSongsAlphabetPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      event.preventDefault();
+      songsAlphabetDraggingRef.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+
+      const alphabet = pickSongsAlphabetByPointer(event.clientY);
+      if (alphabet) {
+        scrollSongsToAlphabet(alphabet, { behavior: "auto" });
+      }
+    },
+    [pickSongsAlphabetByPointer, scrollSongsToAlphabet],
+  );
+
+  const handleSongsAlphabetPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!songsAlphabetDraggingRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      const alphabet = pickSongsAlphabetByPointer(event.clientY);
+      if (alphabet) {
+        scrollSongsToAlphabet(alphabet, { behavior: "auto" });
+      }
+    },
+    [pickSongsAlphabetByPointer, scrollSongsToAlphabet],
+  );
+
+  const handleSongsAlphabetPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      songsAlphabetDraggingRef.current = false;
+
+      if (songsAlphabetActiveLetter) {
+        scrollSongsToAlphabet(songsAlphabetActiveLetter, {
+          behavior: "smooth",
+          force: true,
+        });
+      }
+
+      scheduleSongsAlphabetHide();
+    },
+    [scheduleSongsAlphabetHide, scrollSongsToAlphabet, songsAlphabetActiveLetter],
+  );
+
+  const handleSongsAlphabetPointerCancel = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      songsAlphabetDraggingRef.current = false;
+
+      if (songsAlphabetActiveLetter) {
+        scrollSongsToAlphabet(songsAlphabetActiveLetter, {
+          behavior: "smooth",
+          force: true,
+        });
+      }
+
+      scheduleSongsAlphabetHide();
+    },
+    [scheduleSongsAlphabetHide, scrollSongsToAlphabet, songsAlphabetActiveLetter],
+  );
+
+  const selectedSongsInViewOrder = useMemo(() => {
+    if (!selectedSongIds.length) {
+      return [];
+    }
+
+    const selectedSongSet = new Set(selectedSongIds);
+    return sortedSongs.filter((song) => selectedSongSet.has(song.id));
+  }, [selectedSongIds, sortedSongs]);
+
+  const allVisibleSongsSelected = useMemo(() => {
+    if (!sortedSongs.length) {
+      return false;
+    }
+
+    const selectedSongSet = new Set(selectedSongIds);
+    return sortedSongs.every((song) => selectedSongSet.has(song.id));
+  }, [selectedSongIds, sortedSongs]);
+
+  useEffect(() => {
+    if (!songsSelectMode) {
+      return;
+    }
+
+    const visibleSongSet = new Set(sortedSongs.map((song) => song.id));
+    setSelectedSongIds((previous) => {
+      const next = previous.filter((songId) => visibleSongSet.has(songId));
+      return next.length === previous.length ? previous : next;
+    });
+  }, [songsSelectMode, sortedSongs]);
 
   const filteredAlbums = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -1273,14 +1654,6 @@ export default function App() {
     setIsPlaying(false);
   };
 
-  const insertAllFilteredSongsToQueue = () => {
-    if (!filteredSongs.length) {
-      return;
-    }
-
-    setQueueSongIds(filteredSongs.map((song) => song.id));
-    void playSongById(filteredSongs[0].id, true);
-  };
 
   const go = (next: Page) => {
     setPage(next);
@@ -1297,6 +1670,160 @@ export default function App() {
   const closeSongsSearch = () => {
     setSongsSearchMode(false);
     setSearchQuery("");
+  };
+
+  const openSongsSelectMode = () => {
+    setSongsSortDialogOpen(false);
+    setSongsBatchPlaylistDialogOpen(false);
+    setSongsBatchCreateMode(false);
+    setSongsBatchPlaylistName("");
+    setSongsSelectMode(true);
+    setSelectedSongIds([]);
+  };
+
+  const closeSongsSelectMode = () => {
+    setSongsBatchPlaylistDialogOpen(false);
+    setSongsBatchCreateMode(false);
+    setSongsBatchPlaylistName("");
+    setSongsSelectMode(false);
+    setSelectedSongIds([]);
+  };
+
+  const setSongSelected = (songId: string, checked: boolean) => {
+    setSelectedSongIds((previous) => {
+      const exists = previous.includes(songId);
+
+      if (checked) {
+        return exists ? previous : [...previous, songId];
+      }
+
+      return exists ? previous.filter((id) => id !== songId) : previous;
+    });
+  };
+
+  const toggleSongSelected = (songId: string) => {
+    setSelectedSongIds((previous) => {
+      if (previous.includes(songId)) {
+        return previous.filter((id) => id !== songId);
+      }
+      return [...previous, songId];
+    });
+  };
+
+  const toggleSelectAllSongs = () => {
+    if (!sortedSongs.length) {
+      return;
+    }
+
+    const visibleSongIds = sortedSongs.map((song) => song.id);
+    const selectedSet = new Set(selectedSongIds);
+    const allSelected = visibleSongIds.every((songId) => selectedSet.has(songId));
+
+    if (allSelected) {
+      setSelectedSongIds([]);
+      return;
+    }
+
+    setSelectedSongIds(visibleSongIds);
+  };
+
+  const openSongsSortDialog = () => {
+    setSongsSortDialogOpen(true);
+  };
+
+  const closeSongsSortDialog = () => {
+    setSongsSortDialogOpen(false);
+  };
+
+  const updateSongsSort = (nextSortKey: SongSortKey) => {
+    setSongsSortKey(nextSortKey);
+    setSongsSortDialogOpen(false);
+  };
+
+  const openSongsBatchPlaylistDialog = () => {
+    if (!selectedSongIds.length) {
+      return;
+    }
+
+    setSongsBatchPlaylistDialogOpen(true);
+    setSongsBatchCreateMode(false);
+    setSongsBatchPlaylistName("");
+  };
+
+  const closeSongsBatchPlaylistDialog = () => {
+    setSongsBatchPlaylistDialogOpen(false);
+    setSongsBatchCreateMode(false);
+    setSongsBatchPlaylistName("");
+  };
+
+  const submitSongsBatchCreatePlaylist = () => {
+    const trimmed = songsBatchPlaylistName.trim();
+    if (!trimmed || !selectedSongsInViewOrder.length) {
+      return;
+    }
+
+    const nextPlaylist: Playlist = {
+      id: `${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: trimmed,
+      songIds: [],
+    };
+
+    const selectedIds = selectedSongsInViewOrder.map((song) => song.id);
+
+    setPlaylists((previous) => [
+      {
+        ...nextPlaylist,
+        songIds: selectedIds,
+      },
+      ...previous,
+    ]);
+    setSelectedPlaylistId(nextPlaylist.id);
+
+    closeSongsBatchPlaylistDialog();
+  };
+
+  const playSelectedSongs = () => {
+    if (!selectedSongsInViewOrder.length) {
+      return;
+    }
+
+    const selectedIds = selectedSongsInViewOrder.map((song) => song.id);
+    setQueueSongIds(selectedIds);
+    void playSongById(selectedIds[0], true);
+  };
+
+  const deleteSelectedSongs = async () => {
+    if (!selectedSongIds.length) {
+      return;
+    }
+
+    const deletingSongIds = [...selectedSongIds];
+
+    if (isTauriEnv) {
+      try {
+        await invoke<number>("db_delete_songs_by_ids", {
+          songIds: deletingSongIds,
+        });
+      } catch (error) {
+        setLibraryError(parseMessage(error));
+        return;
+      }
+    }
+
+    const deletingSet = new Set(deletingSongIds);
+
+    setSongs((previous) => previous.filter((song) => !deletingSet.has(song.id)));
+    setPlaylists((previous) =>
+      previous.map((playlist) => ({
+        ...playlist,
+        songIds: playlist.songIds.filter((songId) => !deletingSet.has(songId)),
+      })),
+    );
+    setSelectedSongIds([]);
+
+    if (isTauriEnv) {
+      void refreshLibrary();
+    }
   };
 
   const openCreatePlaylistDialog = () => {
@@ -1372,11 +1899,15 @@ export default function App() {
     setPlaylistMenuId(null);
   };
 
-  const addSongToPlaylist = (songId: string, playlistId?: string | null) => {
+  const addSongsToPlaylist = (songIds: string[], playlistId?: string | null) => {
     const targetId = playlistId ?? selectedPlaylistId;
     if (!targetId) {
       setScanMessage("请先创建歌单。");
-      return;
+      return false;
+    }
+
+    if (!songIds.length) {
+      return false;
     }
 
     setPlaylists((previous) =>
@@ -1385,16 +1916,44 @@ export default function App() {
           return playlist;
         }
 
-        if (playlist.songIds.includes(songId)) {
+        const existingSongSet = new Set(playlist.songIds);
+        const nextSongIds = [...playlist.songIds];
+
+        songIds.forEach((songId) => {
+          if (!existingSongSet.has(songId)) {
+            existingSongSet.add(songId);
+            nextSongIds.push(songId);
+          }
+        });
+
+        if (nextSongIds.length === playlist.songIds.length) {
           return playlist;
         }
 
         return {
           ...playlist,
-          songIds: [...playlist.songIds, songId],
+          songIds: nextSongIds,
         };
       }),
     );
+
+    return true;
+  };
+
+  const addSongToPlaylist = (songId: string, playlistId?: string | null) => {
+    addSongsToPlaylist([songId], playlistId);
+  };
+
+  const addSelectedSongsToPlaylist = (playlistId: string) => {
+    if (!selectedSongsInViewOrder.length) {
+      return;
+    }
+
+    const selectedIds = selectedSongsInViewOrder.map((song) => song.id);
+    const ok = addSongsToPlaylist(selectedIds, playlistId);
+    if (ok) {
+      closeSongsBatchPlaylistDialog();
+    }
   };
 
   const removeSongFromPlaylist = (songId: string, playlistId: string) => {
@@ -1746,7 +2305,7 @@ export default function App() {
           <button type="button" className="icon-btn" aria-label="搜索" onClick={openSongsSearch}>
             <LineIcon name="search" />
           </button>
-          <button type="button" className="icon-btn" aria-label="更多">
+          <button type="button" className="icon-btn" aria-label="排序" onClick={openSongsSortDialog}>
             <LineIcon name="more" />
           </button>
         </>
@@ -1819,34 +2378,59 @@ export default function App() {
     return (
       <section className="songs-page">
         <div className="songs-toolbar">
-          <div className="songs-count">
-            <span className="songs-count-icon" aria-hidden>
-              <LineIcon name="shuffle" />
-            </span>
-            <span className="songs-count-main">{filteredSongs.length}</span>
-            <small>歌曲</small>
-          </div>
+          {songsSelectMode ? (
+            <div className="songs-select-toolbar" data-no-drag="true">
+              <button type="button" className="songs-select-all" onClick={toggleSelectAllSongs}>{allVisibleSongsSelected ? "取消全选" : "全选"}</button>
+              <p>已选择 {selectedSongIds.length} 首</p>
+              <button type="button" className="songs-select-close" aria-label="退出多选" onClick={closeSongsSelectMode}>×</button>
+            </div>
+          ) : (
+            <>
+              <div className="songs-count">
+                <span className="songs-count-icon" aria-hidden>
+                  <LineIcon name="shuffle" />
+                </span>
+                <span className="songs-count-main">{filteredSongs.length}</span>
+                <small>歌曲</small>
+              </div>
 
-          <div className="songs-toolbar-actions">
-            <button type="button" className="icon-btn subtle" aria-label="使用当前过滤作为队列" onClick={insertAllFilteredSongsToQueue}>
-              <LineIcon name="edit" />
-            </button>
-          </div>
+              <div className="songs-toolbar-actions">
+                <button type="button" className="icon-btn subtle" aria-label="多选" onClick={openSongsSelectMode}>
+                  <LineIcon name="edit" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="songs-layout">
           <ScrollArea.Root className="songs-scroll-root" type="always" scrollHideDelay={0}>
             <ScrollArea.Viewport className="songs-card">
-              {filteredSongs.map((song, index) => {
+              {sortedSongs.map((song, index) => {
                 const coverUrl = song.coverHash ? coverMap[song.coverHash] : undefined;
-                const active = song.id === currentSongId;
+                const active = !songsSelectMode && song.id === currentSongId;
+                const selected = selectedSongIds.includes(song.id);
 
                 return (
                   <article
                     key={song.id}
-                    className={`song-row ${active ? "active" : ""}`}
+                    ref={(node) => {
+                      if (node) {
+                        songRowElementMapRef.current.set(song.id, node);
+                      } else {
+                        songRowElementMapRef.current.delete(song.id);
+                      }
+                    }}
+                    className={`song-row ${active ? "active" : ""} ${songsSelectMode ? "select-mode" : ""}`}
+                    onClick={() => {
+                      if (songsSelectMode) {
+                        toggleSongSelected(song.id);
+                      }
+                    }}
                     onDoubleClick={() => {
-                      void playSongById(song.id, true);
+                      if (!songsSelectMode) {
+                        void playSongById(song.id, true);
+                      }
                     }}
                   >
                     {showCover ? (
@@ -1869,14 +2453,33 @@ export default function App() {
                     </div>
 
                     <div className="song-row-actions">
-                      <button
-                        type="button"
-                        className="icon-btn subtle"
-                        aria-label="歌曲操作"
-                        onClick={() => addSongToPlaylist(song.id)}
-                      >
-                        <LineIcon name="more" />
-                      </button>
+                      {songsSelectMode ? (
+                        <Checkbox.Root
+                          className="songs-select-checkbox"
+                          checked={selected}
+                          aria-label={selected ? "取消选择" : "选择歌曲"}
+                          onClick={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onCheckedChange={(checked) => {
+                            setSongSelected(song.id, checked === true);
+                          }}
+                        >
+                          <Checkbox.Indicator className="songs-select-checkmark">
+                            <svg viewBox="0 0 12 12" aria-hidden="true">
+                              <path d="M2.6 6.4 5.3 9 10.2 4.1" />
+                            </svg>
+                          </Checkbox.Indicator>
+                        </Checkbox.Root>
+                      ) : (
+                        <button
+                          type="button"
+                          className="icon-btn subtle"
+                          aria-label="歌曲操作"
+                          onClick={() => addSongToPlaylist(song.id)}
+                        >
+                          <LineIcon name="more" />
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
@@ -1889,11 +2492,37 @@ export default function App() {
           </ScrollArea.Root>
 
           {!isMobile ? (
-            <div className="alphabet-rail" aria-hidden>
-              {ALPHABET_INDEX.map((item) => (
-                <span key={item}>{item}</span>
-              ))}
-            </div>
+            <>
+              <div
+                ref={songsAlphabetRailRef}
+                className="alphabet-rail interactive"
+                data-no-drag="true"
+                onPointerDown={handleSongsAlphabetPointerDown}
+                onPointerMove={handleSongsAlphabetPointerMove}
+                onPointerUp={handleSongsAlphabetPointerUp}
+                onPointerCancel={handleSongsAlphabetPointerCancel}
+              >
+                {ALPHABET_INDEX.map((item) => (
+                  <span
+                    key={item}
+                    ref={(node) => {
+                      if (node) {
+                        songsAlphabetItemElementMapRef.current.set(item, node);
+                      } else {
+                        songsAlphabetItemElementMapRef.current.delete(item);
+                      }
+                    }}
+                    className={`alphabet-rail-item ${songsAlphabetActiveLetter === item ? "active" : ""}`}
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+
+              <div className={`songs-alphabet-toast ${songsAlphabetToastVisible ? "visible" : ""}`} aria-hidden>
+                {songsAlphabetActiveLetter ?? "0"}
+              </div>
+            </>
           ) : null}
         </div>
       </section>
@@ -2680,6 +3309,38 @@ export default function App() {
 
         <main className="page-body">{pageContent}</main>
 
+        {page === "songs" && songsSelectMode ? (
+          <div className="songs-select-floating-actions" data-no-drag="true">
+            <button
+              type="button"
+              className="songs-select-fab-btn"
+              aria-label="播放已选歌曲"
+              onClick={playSelectedSongs}
+              disabled={!selectedSongIds.length}
+            >
+              <LineIcon name="play" />
+            </button>
+            <button
+              type="button"
+              className="songs-select-fab-btn"
+              aria-label="添加到歌单"
+              onClick={openSongsBatchPlaylistDialog}
+              disabled={!selectedSongIds.length}
+            >
+              <LineIcon name="playlist-add" />
+            </button>
+            <button
+              type="button"
+              className="songs-select-fab-btn danger"
+              aria-label="删除已选歌曲"
+              onClick={() => { void deleteSelectedSongs(); }}
+              disabled={!selectedSongIds.length}
+            >
+              <LineIcon name="trash" />
+            </button>
+          </div>
+        ) : null}
+
         <footer className="player-bar">
           <div className="player-left">
             <div className="player-cover-placeholder">
@@ -2789,6 +3450,110 @@ export default function App() {
             ) : null}
           </div>
         </section>
+      ) : null}
+
+      {songsSortDialogOpen ? (
+        <div className="overlay" onClick={closeSongsSortDialog}>
+          <section className="songs-sort-dialog" data-no-drag="true" onClick={(event) => event.stopPropagation()}>
+            <h3>排序</h3>
+            {SONG_SORT_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={`songs-sort-option ${songsSortKey === option.key ? "active" : ""}`}
+                onClick={() => updateSongsSort(option.key)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </section>
+        </div>
+      ) : null}
+
+
+      {songsBatchPlaylistDialogOpen ? (
+        <div className="overlay" onClick={closeSongsBatchPlaylistDialog}>
+          <section className="songs-batch-playlist-dialog" data-no-drag="true" onClick={(event) => event.stopPropagation()}>
+            <h3>添加到歌单</h3>
+
+            {songsBatchCreateMode ? (
+              <div className="songs-batch-create-wrap">
+                <input
+                  type="text"
+                  value={songsBatchPlaylistName}
+                  onChange={(event) => setSongsBatchPlaylistName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      submitSongsBatchCreatePlaylist();
+                    }
+
+                    if (event.key === "Escape") {
+                      setSongsBatchCreateMode(false);
+                      setSongsBatchPlaylistName("");
+                    }
+                  }}
+                  placeholder="歌单名称"
+                  autoFocus
+                />
+
+                <div className="songs-batch-create-actions">
+                  <button
+                    type="button"
+                    className="ghost-btn songs-batch-create-btn"
+                    onClick={() => {
+                      setSongsBatchCreateMode(false);
+                      setSongsBatchPlaylistName("");
+                    }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-btn songs-batch-create-btn"
+                    onClick={submitSongsBatchCreatePlaylist}
+                    disabled={!songsBatchPlaylistName.trim()}
+                  >
+                    创建
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="songs-batch-create-trigger"
+                onClick={() => {
+                  setSongsBatchCreateMode(true);
+                  setSongsBatchPlaylistName("");
+                }}
+              >
+                <LineIcon name="playlist-add" />
+                新建歌单
+              </button>
+            )}
+
+            <div className="songs-batch-playlist-list">
+              {playlists.length ? (
+                playlists.map((playlist) => (
+                  <button
+                    key={`songs-batch-${playlist.id}`}
+                    type="button"
+                    className="songs-batch-playlist-item"
+                    onClick={() => addSelectedSongsToPlaylist(playlist.id)}
+                  >
+                    <span>{playlist.name}</span>
+                    <small>{playlist.songIds.length} songs</small>
+                  </button>
+                ))
+              ) : (
+                <p className="songs-batch-playlist-empty">暂无歌单</p>
+              )}
+            </div>
+
+            <button type="button" className="songs-batch-close" onClick={closeSongsBatchPlaylistDialog}>
+              取消
+            </button>
+          </section>
+        </div>
       ) : null}
 
       {streamModalOpen ? (
