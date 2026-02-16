@@ -6,6 +6,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import * as Checkbox from "@radix-ui/react-checkbox";
 import * as Select from "@radix-ui/react-select";
+import { animate, motion } from "framer-motion";
 
 type Page =
   | "songs"
@@ -591,6 +592,138 @@ function resolveSongAlphabet(title: string): string {
 
   const firstChar = trimmedTitle.charAt(0).toUpperCase();
   return /^[A-Z]$/.test(firstChar) ? firstChar : "0";
+}
+
+interface QualityDistributionDonutProps {
+  hiResCount: number;
+  sqCount: number;
+  size?: number;
+  strokeWidth?: number;
+}
+
+function polarToCartesian(cx: number, cy: number, radius: number, angle: number) {
+  const radian = (angle * Math.PI) / 180;
+  return {
+    x: cx + radius * Math.cos(radian),
+    y: cy + radius * Math.sin(radian),
+  };
+}
+
+function buildDonutArcPath(cx: number, cy: number, radius: number, startAngle: number, sweepAngle: number) {
+  if (sweepAngle <= 0.02) {
+    return "";
+  }
+
+  const normalizedSweep = Math.min(Math.max(sweepAngle, 0), 359.999);
+  const startPoint = polarToCartesian(cx, cy, radius, startAngle);
+  const endPoint = polarToCartesian(cx, cy, radius, startAngle - normalizedSweep);
+  const largeArcFlag = normalizedSweep > 180 ? 1 : 0;
+
+  return `M ${startPoint.x.toFixed(3)} ${startPoint.y.toFixed(3)} A ${radius.toFixed(3)} ${radius.toFixed(3)} 0 ${largeArcFlag} 0 ${endPoint.x.toFixed(3)} ${endPoint.y.toFixed(3)}`;
+}
+
+function QualityDistributionDonut({
+  hiResCount,
+  sqCount,
+  size = 196,
+  strokeWidth = 42,
+}: QualityDistributionDonutProps) {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    setProgress(0);
+
+    const controls = animate(0, 1, {
+      duration: 1.45,
+      delay: 0.2,
+      ease: [0.22, 1, 0.36, 1],
+      onUpdate: (latest) => {
+        setProgress(latest);
+      },
+    });
+
+    return () => {
+      controls.stop();
+    };
+  }, [hiResCount, sqCount]);
+
+  const { center, radius, hasData, hiResPath, sqPath } = useMemo(() => {
+    const total = hiResCount + sqCount;
+    const hasHiRes = hiResCount > 0;
+    const hasSq = sqCount > 0;
+    const hasBoth = hasHiRes && hasSq;
+    const segmentGap = hasBoth ? 5 : 0;
+    const wrapGap = hasBoth ? 5 : 0;
+    const startAngle = 0;
+    const normalizedProgress = Math.min(Math.max(progress, 0), 1);
+
+    const center = size / 2;
+    const radius = (size - strokeWidth) / 2;
+
+    if (total <= 0) {
+      return {
+        center,
+        radius,
+        hasData: false,
+        hiResPath: "",
+        sqPath: "",
+      };
+    }
+
+    const sequenceSweep = 360 - wrapGap;
+    const dataSweep = Math.max(0, sequenceSweep - segmentGap);
+    const hiResSweep = dataSweep * (hiResCount / total) * normalizedProgress;
+    const sqSweep = dataSweep * (sqCount / total) * normalizedProgress;
+    const animatedGap = segmentGap * normalizedProgress;
+
+    const hiResPath = hasHiRes
+      ? buildDonutArcPath(center, center, radius, startAngle, hiResSweep)
+      : "";
+
+    const sqStartAngle = startAngle - hiResSweep - animatedGap;
+    const sqPath = hasSq
+      ? buildDonutArcPath(center, center, radius, sqStartAngle, sqSweep)
+      : "";
+
+    return {
+      center,
+      radius,
+      hasData: true,
+      hiResPath,
+      sqPath,
+    };
+  }, [hiResCount, progress, size, sqCount, strokeWidth]);
+
+  return (
+    <motion.svg
+      className="quality-donut-svg"
+      viewBox={`0 0 ${size} ${size}`}
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <circle
+        className={`quality-donut-track ${hasData ? "has-data" : ""}`}
+        cx={center}
+        cy={center}
+        r={radius}
+      />
+
+      {hiResPath ? (
+        <path
+          className="quality-donut-segment quality-donut-hires"
+          d={hiResPath}
+        />
+      ) : null}
+
+      {sqPath ? (
+        <path
+          className="quality-donut-segment quality-donut-sq"
+          d={sqPath}
+        />
+      ) : null}
+    </motion.svg>
+  );
 }
 
 export default function App() {
@@ -1588,15 +1721,15 @@ export default function App() {
     const total = songs.length;
     const hiRes = songs.filter((song) => Boolean(song.isHr)).length;
     const sqOnly = songs.filter((song) => !song.isHr && song.isSq).length;
-    const hiResDeg = total ? (hiRes / total) * 360 : 0;
-    const sqDeg = total ? (sqOnly / total) * 360 : 0;
+    const hiResRatio = total ? hiRes / total : 0;
+    const sqRatio = total ? sqOnly / total : 0;
 
     return {
       total,
       hiRes,
       sqOnly,
-      hiResDeg,
-      sqDeg,
+      hiResRatio,
+      sqRatio,
     };
   }, [songs]);
 
@@ -3592,53 +3725,73 @@ export default function App() {
     );
   };
 
-  const renderStatsPage = () => {
-    const ringStyle: CSSProperties = {
-      background: `conic-gradient(
-        #8657ff 0deg ${qualityStats.hiResDeg}deg,
-        #1cc391 ${qualityStats.hiResDeg}deg ${qualityStats.hiResDeg + qualityStats.sqDeg}deg,
-        #e5eaf3 ${qualityStats.hiResDeg + qualityStats.sqDeg}deg 360deg
-      )`,
-    };
+  const renderStatsPage = () => (
+    <section className="stats-page rich">
+      <div className="stats-layout">
+        <article className="stats-main-card quality-card">
+          <h3>音质分布</h3>
 
-    return (
-      <section className="stats-page rich">
-        <div className="stats-layout">
-          <article className="stats-main-card quality-card">
-            <h3>音质分布</h3>
-
-            <div className="quality-donut-wrap">
-              <div className="quality-donut" style={ringStyle}>
-                <div className="quality-donut-hole" />
-              </div>
+          <div className="quality-donut-wrap">
+            <div className="quality-donut">
+              <QualityDistributionDonut hiResCount={qualityStats.hiRes} sqCount={qualityStats.sqOnly} />
+              <div className="quality-donut-hole" />
             </div>
-
-            <div className="quality-legend">
-              <span><i className="dot purple" />Hi-Res</span>
-              <span><i className="dot green" />SQ</span>
-            </div>
-          </article>
-
-          <div className="stats-side">
-            <article className="stats-side-card">
-              <p><i className="dot purple" />Hi-Res</p>
-              <strong>{qualityStats.hiRes}<small>歌曲</small></strong>
-            </article>
-
-            <article className="stats-side-card">
-              <p><i className="dot green" />SQ</p>
-              <strong>{qualityStats.sqOnly}<small>歌曲</small></strong>
-            </article>
-
-            <article className="stats-side-card total">
-              <p>音乐库总计</p>
-              <strong>{stats.totalSongs}</strong>
-            </article>
           </div>
+
+          <div className="quality-legend">
+            <motion.span
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.8 }}
+            >
+              <i className="dot purple" />Hi-Res
+            </motion.span>
+            <motion.span
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.8 }}
+            >
+              <i className="dot green" />SQ
+            </motion.span>
+          </div>
+        </article>
+
+        <div className="stats-side">
+          <motion.article
+            className="stats-side-card"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <p><i className="dot purple" />Hi-Res</p>
+            <strong>{qualityStats.hiRes}</strong>
+            <small>歌曲</small>
+          </motion.article>
+
+          <motion.article
+            className="stats-side-card"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <p><i className="dot green" />SQ</p>
+            <strong>{qualityStats.sqOnly}</strong>
+            <small>歌曲</small>
+          </motion.article>
+
+          <motion.article
+            className="stats-side-card total"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.9, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <p>音乐库总计</p>
+            <strong>{stats.totalSongs}</strong>
+          </motion.article>
         </div>
-      </section>
-    );
-  };
+      </div>
+    </section>
+  );
 
   const renderSettingsPage = () => (
     <section className="settings-page">
