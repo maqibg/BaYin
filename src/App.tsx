@@ -167,6 +167,7 @@ type PlayMode = "sequence" | "shuffle" | "repeat-one";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "addedAt";
 type AlbumSortKey = "title" | "artist" | "year" | "songCount";
 type ArtistSortKey = "name" | "songCount";
+type PlaylistSortKey = "addedAt" | "name" | "songCount";
 
 interface StreamInfoPayload {
   type?: string;
@@ -358,6 +359,12 @@ const ALBUM_SORT_OPTIONS: Array<{ key: AlbumSortKey; label: string }> = [
 ];
 
 const ARTIST_SORT_OPTIONS: Array<{ key: ArtistSortKey; label: string }> = [
+  { key: "name", label: "名称" },
+  { key: "songCount", label: "歌曲数量" },
+];
+
+const PLAYLIST_SORT_OPTIONS: Array<{ key: PlaylistSortKey; label: string }> = [
+  { key: "addedAt", label: "添加日期" },
   { key: "name", label: "名称" },
   { key: "songCount", label: "歌曲数量" },
 ];
@@ -594,7 +601,10 @@ export default function App() {
 
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [openedPlaylistId, setOpenedPlaylistId] = useState<string | null>(null);
   const [playlistMenuId, setPlaylistMenuId] = useState<string | null>(null);
+  const [songMenuSongId, setSongMenuSongId] = useState<string | null>(null);
+  const [songInfoSongId, setSongInfoSongId] = useState<string | null>(null);
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [dialogInput, setDialogInput] = useState("");
   const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
@@ -612,6 +622,10 @@ export default function App() {
   const [albumsSearchMode, setAlbumsSearchMode] = useState(false);
   const [artistSearchQuery, setArtistSearchQuery] = useState("");
   const [artistsSearchMode, setArtistsSearchMode] = useState(false);
+  const [playlistSearchQuery, setPlaylistSearchQuery] = useState("");
+  const [playlistsSearchMode, setPlaylistsSearchMode] = useState(false);
+  const [playlistDetailSearchQuery, setPlaylistDetailSearchQuery] = useState("");
+  const [playlistDetailSearchMode, setPlaylistDetailSearchMode] = useState(false);
   const [songsSelectMode, setSongsSelectMode] = useState(false);
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [songsSortKey, setSongsSortKey] = useState<SongSortKey>("title");
@@ -620,6 +634,8 @@ export default function App() {
   const [albumsSortDialogOpen, setAlbumsSortDialogOpen] = useState(false);
   const [artistsSortKey, setArtistsSortKey] = useState<ArtistSortKey>("name");
   const [artistsSortDialogOpen, setArtistsSortDialogOpen] = useState(false);
+  const [playlistsSortKey, setPlaylistsSortKey] = useState<PlaylistSortKey>("addedAt");
+  const [playlistsSortDialogOpen, setPlaylistsSortDialogOpen] = useState(false);
   const [songsBatchPlaylistDialogOpen, setSongsBatchPlaylistDialogOpen] = useState(false);
   const [songsBatchCreateMode, setSongsBatchCreateMode] = useState(false);
   const [songsBatchPlaylistName, setSongsBatchPlaylistName] = useState("");
@@ -755,6 +771,27 @@ export default function App() {
         setArtistsSortDialogOpen(false);
       }
     }
+
+    if (page !== "playlists") {
+      if (playlistSearchQuery) {
+        setPlaylistSearchQuery("");
+      }
+      if (playlistsSearchMode) {
+        setPlaylistsSearchMode(false);
+      }
+      if (playlistsSortDialogOpen) {
+        setPlaylistsSortDialogOpen(false);
+      }
+      if (openedPlaylistId) {
+        setOpenedPlaylistId(null);
+      }
+      if (playlistDetailSearchQuery) {
+        setPlaylistDetailSearchQuery("");
+      }
+      if (playlistDetailSearchMode) {
+        setPlaylistDetailSearchMode(false);
+      }
+    }
   }, [
     albumSearchQuery,
     albumsSearchMode,
@@ -762,7 +799,13 @@ export default function App() {
     artistSearchQuery,
     artistsSearchMode,
     artistsSortDialogOpen,
+    openedPlaylistId,
     page,
+    playlistDetailSearchMode,
+    playlistDetailSearchQuery,
+    playlistSearchQuery,
+    playlistsSearchMode,
+    playlistsSortDialogOpen,
     searchQuery,
     selectedSongIds.length,
     songsBatchCreateMode,
@@ -790,6 +833,18 @@ export default function App() {
       searchInputRef.current?.focus();
     }
   }, [artistsSearchMode, page]);
+
+  useEffect(() => {
+    if (page === "playlists" && playlistsSearchMode) {
+      searchInputRef.current?.focus();
+    }
+  }, [page, playlistsSearchMode]);
+
+  useEffect(() => {
+    if (page === "playlists" && openedPlaylistId && playlistDetailSearchMode) {
+      searchInputRef.current?.focus();
+    }
+  }, [openedPlaylistId, page, playlistDetailSearchMode]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_KEY);
@@ -1413,6 +1468,102 @@ export default function App() {
     return sorted;
   }, [artistsSortKey, filteredArtists, textSorter]);
 
+  const filteredPlaylists = useMemo(() => {
+    const keyword = playlistSearchQuery.trim().toLowerCase();
+    if (!keyword) {
+      return playlists;
+    }
+
+    return playlists.filter((playlist) => playlist.name.toLowerCase().includes(keyword));
+  }, [playlistSearchQuery, playlists]);
+
+  const sortedPlaylists = useMemo(() => {
+    const sorted = [...filteredPlaylists];
+    const compareText = (left: string, right: string) => textSorter.compare(left, right);
+
+    const resolveAddedAt = (playlist: Playlist): number => {
+      const matched = playlist.id.match(/^(\d{10,})-/);
+      if (!matched) {
+        return 0;
+      }
+
+      const timestamp = Number(matched[1]);
+      return Number.isFinite(timestamp) ? timestamp : 0;
+    };
+
+    sorted.sort((leftPlaylist, rightPlaylist) => {
+      if (playlistsSortKey === "name") {
+        return compareText(leftPlaylist.name, rightPlaylist.name);
+      }
+
+      if (playlistsSortKey === "songCount") {
+        return (
+          rightPlaylist.songIds.length - leftPlaylist.songIds.length
+          || compareText(leftPlaylist.name, rightPlaylist.name)
+        );
+      }
+
+      return (
+        resolveAddedAt(rightPlaylist) - resolveAddedAt(leftPlaylist)
+        || compareText(leftPlaylist.name, rightPlaylist.name)
+      );
+    });
+
+    return sorted;
+  }, [filteredPlaylists, playlistsSortKey, textSorter]);
+
+  const openedPlaylist = useMemo(
+    () => (openedPlaylistId ? playlists.find((playlist) => playlist.id === openedPlaylistId) ?? null : null),
+    [openedPlaylistId, playlists],
+  );
+
+  const playlistDetailSongs = useMemo(() => {
+    if (!openedPlaylist) {
+      return [];
+    }
+
+    return openedPlaylist.songIds
+      .map((songId) => songMap.get(songId))
+      .filter((song): song is DbSong => Boolean(song));
+  }, [openedPlaylist, songMap]);
+
+  const filteredPlaylistDetailSongs = useMemo(() => {
+    const keyword = playlistDetailSearchQuery.trim().toLowerCase();
+    if (!keyword) {
+      return playlistDetailSongs;
+    }
+
+    return playlistDetailSongs.filter((song) => {
+      const title = song.title.toLowerCase();
+      const artist = song.artist.toLowerCase();
+      const album = song.album.toLowerCase();
+      return title.includes(keyword) || artist.includes(keyword) || album.includes(keyword);
+    });
+  }, [playlistDetailSearchQuery, playlistDetailSongs]);
+
+  const songMenuSong = useMemo(
+    () => (songMenuSongId ? songMap.get(songMenuSongId) ?? null : null),
+    [songMap, songMenuSongId],
+  );
+
+  const songInfoSong = useMemo(
+    () => (songInfoSongId ? songMap.get(songInfoSongId) ?? null : null),
+    [songInfoSongId, songMap],
+  );
+
+  const songMenuCoverUrl = useMemo(() => {
+    if (!songMenuSong) {
+      return null;
+    }
+
+    if (songMenuSong.coverHash && coverMap[songMenuSong.coverHash]) {
+      return coverMap[songMenuSong.coverHash];
+    }
+
+    const payload = safeParseJson<StreamInfoPayload>(songMenuSong.streamInfo);
+    return payload?.coverUrl ?? null;
+  }, [coverMap, songMenuSong]);
+
   const qualityStats = useMemo(() => {
     const total = songs.length;
     const hiRes = songs.filter((song) => Boolean(song.isHr)).length;
@@ -1490,20 +1641,17 @@ export default function App() {
     });
   }, [playlists]);
 
-  const selectedPlaylist = useMemo(
-    () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null,
-    [playlists, selectedPlaylistId],
-  );
-
-  const selectedPlaylistSongs = useMemo(() => {
-    if (!selectedPlaylist) {
-      return [];
+  useEffect(() => {
+    if (!openedPlaylistId) {
+      return;
     }
 
-    return selectedPlaylist.songIds
-      .map((songId) => songMap.get(songId))
-      .filter((song): song is DbSong => Boolean(song));
-  }, [selectedPlaylist, songMap]);
+    if (!playlists.some((playlist) => playlist.id === openedPlaylistId)) {
+      setOpenedPlaylistId(null);
+      setPlaylistDetailSearchMode(false);
+      setPlaylistDetailSearchQuery("");
+    }
+  }, [openedPlaylistId, playlists]);
 
   useEffect(() => {
     if (!songs.length) {
@@ -1803,6 +1951,8 @@ export default function App() {
   const go = (next: Page) => {
     setPage(next);
     setPlaylistMenuId(null);
+    setSongMenuSongId(null);
+    setSongInfoSongId(null);
     if (isMobile) {
       setSidebarOpen(false);
     }
@@ -1835,6 +1985,140 @@ export default function App() {
   const closeArtistsSearch = () => {
     setArtistsSearchMode(false);
     setArtistSearchQuery("");
+  };
+
+  const openPlaylistsSearch = () => {
+    setPlaylistsSearchMode(true);
+    setPlaylistsSortDialogOpen(false);
+  };
+
+  const closePlaylistsSearch = () => {
+    setPlaylistsSearchMode(false);
+    setPlaylistSearchQuery("");
+  };
+
+  const openPlaylistDetail = (playlistId: string) => {
+    setSelectedPlaylistId(playlistId);
+    setOpenedPlaylistId(playlistId);
+    setPlaylistMenuId(null);
+    setPlaylistsSearchMode(false);
+    setPlaylistSearchQuery("");
+    setPlaylistsSortDialogOpen(false);
+    setPlaylistDetailSearchMode(false);
+    setPlaylistDetailSearchQuery("");
+  };
+
+  const closePlaylistDetail = () => {
+    setOpenedPlaylistId(null);
+    setPlaylistDetailSearchMode(false);
+    setPlaylistDetailSearchQuery("");
+    setSongMenuSongId(null);
+    setSongInfoSongId(null);
+  };
+
+  const openPlaylistDetailSearch = () => {
+    setPlaylistDetailSearchMode(true);
+  };
+
+  const closePlaylistDetailSearch = () => {
+    setPlaylistDetailSearchMode(false);
+    setPlaylistDetailSearchQuery("");
+  };
+
+  const closeSongMenu = () => {
+    setSongMenuSongId(null);
+  };
+
+  const openSongMenu = (songId: string) => {
+    setSongMenuSongId(songId);
+    setSongInfoSongId(null);
+    setPlaylistMenuId(null);
+  };
+
+  const queueSongAsNext = (songId: string) => {
+    setQueueSongIds((previous) => {
+      const queueWithoutSong = previous.filter((id) => id !== songId);
+      if (!queueWithoutSong.length) {
+        return [songId];
+      }
+
+      const currentIndex = currentSongId ? queueWithoutSong.indexOf(currentSongId) : -1;
+      if (currentIndex < 0) {
+        return [songId, ...queueWithoutSong];
+      }
+
+      const nextQueue = [...queueWithoutSong];
+      nextQueue.splice(currentIndex + 1, 0, songId);
+      return nextQueue;
+    });
+
+    if (!currentSongId) {
+      void playSongById(songId, true);
+    }
+
+    closeSongMenu();
+  };
+
+  const jumpToSongArtist = (song: DbSong) => {
+    setArtistSearchQuery(song.artist);
+    setArtistsSearchMode(true);
+    closeSongMenu();
+    go("artists");
+  };
+
+  const jumpToSongAlbum = (song: DbSong) => {
+    setAlbumSearchQuery(song.album);
+    setAlbumsSearchMode(true);
+    closeSongMenu();
+    go("albums");
+  };
+
+  const openSongInfo = (songId: string) => {
+    setSongInfoSongId(songId);
+    setSongMenuSongId(null);
+  };
+
+  const closeSongInfo = () => {
+    setSongInfoSongId(null);
+  };
+
+  const deleteSongById = async (songId: string) => {
+    if (isTauriEnv) {
+      try {
+        await invoke<number>("db_delete_songs_by_ids", {
+          songIds: [songId],
+        });
+      } catch (error) {
+        setLibraryError(parseMessage(error));
+        return;
+      }
+    }
+
+    setSongs((previous) => previous.filter((song) => song.id !== songId));
+    setPlaylists((previous) =>
+      previous.map((playlist) => ({
+        ...playlist,
+        songIds: playlist.songIds.filter((id) => id !== songId),
+      })),
+    );
+    setSelectedSongIds((previous) => previous.filter((id) => id !== songId));
+
+    if (currentSongId === songId) {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.src = "";
+      }
+      setCurrentSongId(null);
+      setIsPlaying(false);
+    }
+
+    setSongMenuSongId(null);
+    setSongInfoSongId(null);
+
+    if (isTauriEnv) {
+      void refreshLibrary();
+    }
   };
 
   const openSongsSelectMode = () => {
@@ -1929,6 +2213,19 @@ export default function App() {
   const updateArtistsSort = (nextSortKey: ArtistSortKey) => {
     setArtistsSortKey(nextSortKey);
     setArtistsSortDialogOpen(false);
+  };
+
+  const openPlaylistsSortDialog = () => {
+    setPlaylistsSortDialogOpen(true);
+  };
+
+  const closePlaylistsSortDialog = () => {
+    setPlaylistsSortDialogOpen(false);
+  };
+
+  const updatePlaylistsSort = (nextSortKey: PlaylistSortKey) => {
+    setPlaylistsSortKey(nextSortKey);
+    setPlaylistsSortDialogOpen(false);
   };
 
   const openSongsBatchPlaylistDialog = () => {
@@ -2087,6 +2384,9 @@ export default function App() {
     if (selectedPlaylistId === removedId) {
       setSelectedPlaylistId(null);
     }
+    if (openedPlaylistId === removedId) {
+      closePlaylistDetail();
+    }
     setPlaylistMenuId(null);
   };
 
@@ -2145,21 +2445,6 @@ export default function App() {
     if (ok) {
       closeSongsBatchPlaylistDialog();
     }
-  };
-
-  const removeSongFromPlaylist = (songId: string, playlistId: string) => {
-    setPlaylists((previous) =>
-      previous.map((playlist) => {
-        if (playlist.id !== playlistId) {
-          return playlist;
-        }
-
-        return {
-          ...playlist,
-          songIds: playlist.songIds.filter((id) => id !== songId),
-        };
-      }),
-    );
   };
 
   const openStreamModal = () => {
@@ -2408,11 +2693,19 @@ export default function App() {
     }
   };
 
-  const shouldShowBack = page === "settings-ui";
+  const isPlaylistDetailView = page === "playlists" && Boolean(openedPlaylist);
+  const shouldShowBack = page === "settings-ui" || isPlaylistDetailView;
   const showSongsSearchBar = page === "songs" && songsSearchMode;
   const showAlbumsSearchBar = page === "albums" && albumsSearchMode;
   const showArtistsSearchBar = page === "artists" && artistsSearchMode;
-  const showTopSearchBar = showSongsSearchBar || showAlbumsSearchBar || showArtistsSearchBar;
+  const showPlaylistsSearchBar = page === "playlists" && !isPlaylistDetailView && playlistsSearchMode;
+  const showPlaylistDetailSearchBar = isPlaylistDetailView && playlistDetailSearchMode;
+  const showTopSearchBar = showSongsSearchBar
+    || showAlbumsSearchBar
+    || showArtistsSearchBar
+    || showPlaylistsSearchBar
+    || showPlaylistDetailSearchBar;
+  const pageTitleText = isPlaylistDetailView && openedPlaylist ? openedPlaylist.name : PAGE_TITLE[page];
 
   const openExternalUrl = useCallback(
     async (url: string) => {
@@ -2541,9 +2834,20 @@ export default function App() {
     }
 
     if (page === "playlists") {
+      if (isPlaylistDetailView) {
+        return (
+          <button type="button" className="icon-btn" aria-label="搜索歌单内歌曲" onClick={openPlaylistDetailSearch}>
+            <LineIcon name="search" />
+          </button>
+        );
+      }
+
       return (
         <>
-          <button type="button" className="icon-btn" aria-label="排序">
+          <button type="button" className="icon-btn" aria-label="搜索歌单" onClick={openPlaylistsSearch}>
+            <LineIcon name="search" />
+          </button>
+          <button type="button" className="icon-btn" aria-label="歌单排序" onClick={openPlaylistsSortDialog}>
             <LineIcon name="sort" />
           </button>
           <button
@@ -2645,12 +2949,16 @@ export default function App() {
                     onClick={() => {
                       if (songsSelectMode) {
                         toggleSongSelected(song.id);
+                        return;
                       }
+                      void playSongById(song.id, true);
                     }}
-                    onDoubleClick={() => {
-                      if (!songsSelectMode) {
-                        void playSongById(song.id, true);
+                    onContextMenu={(event) => {
+                      if (songsSelectMode) {
+                        return;
                       }
+                      event.preventDefault();
+                      openSongMenu(song.id);
                     }}
                   >
                     {showCover ? (
@@ -2695,7 +3003,10 @@ export default function App() {
                           type="button"
                           className="icon-btn subtle"
                           aria-label="歌曲操作"
-                          onClick={() => addSongToPlaylist(song.id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openSongMenu(song.id);
+                          }}
                         >
                           <LineIcon name="more" />
                         </button>
@@ -2854,84 +3165,166 @@ export default function App() {
   };
 
   const renderPlaylistsPage = () => {
-    if (!playlists.length) {
+    if (isPlaylistDetailView && openedPlaylist) {
+      const hasSearchKeyword = Boolean(playlistDetailSearchQuery.trim());
+
+      if (playlistDetailSearchMode && !hasSearchKeyword) {
+        return (
+          <section className="songs-search-empty" data-no-drag="true">
+            <LineIcon name="search" className="songs-search-empty-icon" />
+            <p>输入关键词开始搜索</p>
+          </section>
+        );
+      }
+
+      if (!filteredPlaylistDetailSongs.length) {
+        if (playlistDetailSearchMode) {
+          return (
+            <section className="songs-search-empty" data-no-drag="true">
+              <LineIcon name="search" className="songs-search-empty-icon" />
+              <p>未找到匹配结果</p>
+            </section>
+          );
+        }
+
+        return (
+          <section className="songs-search-empty" data-no-drag="true">
+            <LineIcon name="playlists" className="songs-search-empty-icon" />
+            <p>当前歌单还没有歌曲</p>
+          </section>
+        );
+      }
+
+      return (
+        <section className="songs-page playlist-detail-page">
+          <div className="songs-layout">
+            <ScrollArea.Root className="songs-scroll-root" type="always" scrollHideDelay={0}>
+              <ScrollArea.Viewport className="songs-card">
+                {filteredPlaylistDetailSongs.map((song, index) => {
+                  const coverUrl = song.coverHash ? coverMap[song.coverHash] : undefined;
+                  const active = song.id === currentSongId;
+
+                  return (
+                    <article
+                      key={`${openedPlaylist.id}-${song.id}`}
+                      className={`song-row ${active ? "active" : ""}`}
+                      onClick={() => {
+                        void playSongById(song.id, true);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        openSongMenu(song.id);
+                      }}
+                    >
+                      {showCover ? (
+                        <div className="song-cover" style={coverUrl ? undefined : createCoverStyle(index)}>
+                          {coverUrl ? (
+                            <img src={coverUrl} alt={song.title} className="song-cover-image" />
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <div className="song-info">
+                        <div className="song-title-line">
+                          <span className="song-title">{song.title}</span>
+                          {song.isHr ? <span className="song-tag hr">HR</span> : null}
+                          {song.isSq ? <span className="song-tag sq">SQ</span> : null}
+                        </div>
+                        <p className="song-subtitle">
+                          {song.artist} · {song.album}
+                        </p>
+                      </div>
+
+                      <div className="song-row-actions">
+                        <button
+                          type="button"
+                          className="icon-btn subtle"
+                          aria-label="歌曲操作"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openSongMenu(song.id);
+                          }}
+                        >
+                          <LineIcon name="more" />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </ScrollArea.Viewport>
+              <ScrollArea.Scrollbar className="songs-scrollbar" orientation="vertical">
+                <ScrollArea.Thumb className="songs-scrollbar-thumb" />
+              </ScrollArea.Scrollbar>
+              <ScrollArea.Corner className="songs-scrollbar-corner" />
+            </ScrollArea.Root>
+          </div>
+        </section>
+      );
+    }
+
+    const hasSearchKeyword = Boolean(playlistSearchQuery.trim());
+
+    if (playlistsSearchMode && !hasSearchKeyword) {
+      return (
+        <section className="songs-search-empty" data-no-drag="true">
+          <LineIcon name="search" className="songs-search-empty-icon" />
+          <p>输入关键词开始搜索</p>
+        </section>
+      );
+    }
+
+    if (!sortedPlaylists.length) {
+      if (playlistsSearchMode) {
+        return (
+          <section className="songs-search-empty" data-no-drag="true">
+            <LineIcon name="search" className="songs-search-empty-icon" />
+            <p>未找到匹配结果</p>
+          </section>
+        );
+      }
+
       return renderEmpty("暂无歌单", "创建歌单", openCreatePlaylistDialog);
     }
 
     return (
       <section className="playlist-page">
-        {playlists.map((playlist) => {
-          const isSelected = playlist.id === selectedPlaylistId;
-          return (
-            <article key={playlist.id} className={`playlist-card ${isSelected ? "active" : ""}`}>
-              <button
-                type="button"
-                className="playlist-main"
-                onClick={() => setSelectedPlaylistId(playlist.id)}
-              >
-                <h3>{playlist.name}</h3>
-                <p>{playlist.songIds.length} 首歌曲</p>
-              </button>
+        {sortedPlaylists.map((playlist) => {
+          const active = playlist.id === selectedPlaylistId;
 
-              <button
-                type="button"
-                className="icon-btn subtle"
-                aria-label={`操作 ${playlist.name}`}
-                onClick={() => setPlaylistMenuId(playlist.id)}
-              >
-                <LineIcon name="more" />
-              </button>
-            </article>
+          return (
+            <article
+              key={playlist.id}
+              className={`playlist-card ${active ? "active" : ""}`}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setSelectedPlaylistId(playlist.id);
+                setPlaylistMenuId(playlist.id);
+              }}
+            >
+            <button
+              type="button"
+              className="playlist-main"
+              onClick={() => openPlaylistDetail(playlist.id)}
+            >
+              <h3>{playlist.name}</h3>
+              <p>{playlist.songIds.length} 首歌曲</p>
+            </button>
+
+            <button
+              type="button"
+              className="icon-btn subtle"
+              aria-label={`操作 ${playlist.name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedPlaylistId(playlist.id);
+                setPlaylistMenuId(playlist.id);
+              }}
+            >
+              <LineIcon name="more" />
+            </button>
+          </article>
           );
         })}
-
-        {selectedPlaylist ? (
-          <article className="playlist-detail">
-            <div className="playlist-detail-head">
-              <h3>{selectedPlaylist.name}</h3>
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => {
-                  if (currentSongId) {
-                    addSongToPlaylist(currentSongId, selectedPlaylist.id);
-                  }
-                }}
-                disabled={!currentSongId}
-              >
-                添加当前播放
-              </button>
-            </div>
-
-            {selectedPlaylistSongs.length ? (
-              <div className="playlist-song-list">
-                {selectedPlaylistSongs.map((song) => (
-                  <div key={`${selectedPlaylist.id}-${song.id}`} className="playlist-song-row">
-                    <button
-                      type="button"
-                      className="playlist-song-main"
-                      onClick={() => {
-                        void playSongById(song.id, true);
-                      }}
-                    >
-                      <span>{song.title}</span>
-                      <small>{song.artist}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-btn subtle"
-                      onClick={() => removeSongFromPlaylist(song.id, selectedPlaylist.id)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="playlist-empty-hint">当前歌单还没有歌曲。</p>
-            )}
-          </article>
-        ) : null}
       </section>
     );
   };
@@ -3565,11 +3958,63 @@ export default function App() {
                   取消
                 </button>
               </div>
+            ) : showPlaylistsSearchBar ? (
+              <div className="songs-search-topbar" data-no-drag="true">
+                <label className="songs-search-field">
+                  <LineIcon name="search" />
+                  <input
+                    ref={searchInputRef}
+                    className="songs-search-input"
+                    value={playlistSearchQuery}
+                    onChange={(event) => setPlaylistSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        closePlaylistsSearch();
+                      }
+                    }}
+                    placeholder="搜索歌单"
+                  />
+                </label>
+                <button type="button" className="songs-search-cancel" onClick={closePlaylistsSearch}>
+                  取消
+                </button>
+              </div>
+            ) : showPlaylistDetailSearchBar ? (
+              <div className="songs-search-topbar" data-no-drag="true">
+                <label className="songs-search-field">
+                  <LineIcon name="search" />
+                  <input
+                    ref={searchInputRef}
+                    className="songs-search-input"
+                    value={playlistDetailSearchQuery}
+                    onChange={(event) => setPlaylistDetailSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        closePlaylistDetailSearch();
+                      }
+                    }}
+                    placeholder="搜索歌单内歌曲"
+                  />
+                </label>
+                <button type="button" className="songs-search-cancel" onClick={closePlaylistDetailSearch}>
+                  取消
+                </button>
+              </div>
             ) : (
               <>
                 <div className="topbar-left">
                   {shouldShowBack ? (
-                    <button type="button" className="icon-btn" onClick={() => go("settings")}>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => {
+                        if (isPlaylistDetailView) {
+                          closePlaylistDetail();
+                          return;
+                        }
+                        go("settings");
+                      }}
+                    >
                       <LineIcon name="back" />
                     </button>
                   ) : null}
@@ -3580,7 +4025,7 @@ export default function App() {
                     </button>
                   ) : null}
 
-                  <h1 className={`page-title ${page === "songs" || page === "albums" || page === "artists" ? "songs-title" : ""}`}>{PAGE_TITLE[page]}</h1>
+                  <h1 className={`page-title ${page === "songs" || page === "albums" || page === "artists" || page === "playlists" ? "songs-title" : ""}`}>{pageTitleText}</h1>
                 </div>
 
                 <div className="page-header-actions" data-no-drag="true">{headerActions}</div>
@@ -3697,7 +4142,15 @@ export default function App() {
             {queueSongs.length ? (
               queueSongs.map((song) => (
                 <div key={`queue-${song.id}`} className={`queue-row ${song.id === currentSongId ? "active" : ""}`}>
-                  <button type="button" className="queue-main" onClick={() => { void playSongById(song.id, true); }}>
+                  <button
+                    type="button"
+                    className="queue-main"
+                    onClick={() => { void playSongById(song.id, true); }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      openSongMenu(song.id);
+                    }}
+                  >
                     <span>{song.title}</span>
                     <small>{song.artist}</small>
                   </button>
@@ -3788,6 +4241,109 @@ export default function App() {
                 {option.label}
               </button>
             ))}
+          </section>
+        </div>
+      ) : null}
+
+      {playlistsSortDialogOpen ? (
+        <div className="overlay" onClick={closePlaylistsSortDialog}>
+          <section className="songs-sort-dialog" data-no-drag="true" onClick={(event) => event.stopPropagation()}>
+            <h3>排序</h3>
+            {PLAYLIST_SORT_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={`songs-sort-option ${playlistsSortKey === option.key ? "active" : ""}`}
+                onClick={() => updatePlaylistsSort(option.key)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </section>
+        </div>
+      ) : null}
+
+      {songMenuSong ? (
+        <div className="overlay" onClick={closeSongMenu}>
+          <section className="song-context-menu" data-no-drag="true" onClick={(event) => event.stopPropagation()}>
+            <div className="song-context-head">
+              <div
+                className="song-context-cover"
+                style={songMenuCoverUrl ? undefined : createCoverStyle(0)}
+              >
+                {songMenuCoverUrl ? (
+                  <img src={songMenuCoverUrl} alt={songMenuSong.title} className="song-context-cover-image" />
+                ) : null}
+              </div>
+              <div className="song-context-meta">
+                <h3>{songMenuSong.title}</h3>
+                <p>{songMenuSong.artist} · {songMenuSong.album}</p>
+              </div>
+              <button type="button" className="song-context-close" onClick={closeSongMenu}>×</button>
+            </div>
+
+            <div className="song-context-body">
+              <button
+                type="button"
+                className="song-context-item"
+                onClick={() => {
+                  addSongToPlaylist(songMenuSong.id);
+                  closeSongMenu();
+                }}
+              >
+                <LineIcon name="playlist-add" />
+                <span>添加到歌单</span>
+              </button>
+              <button type="button" className="song-context-item" onClick={() => queueSongAsNext(songMenuSong.id)}>
+                <LineIcon name="next" />
+                <span>下一首播放</span>
+              </button>
+              <button type="button" className="song-context-item" onClick={() => jumpToSongArtist(songMenuSong)}>
+                <LineIcon name="artists" />
+                <span>查看艺术家</span>
+              </button>
+              <button type="button" className="song-context-item" onClick={() => jumpToSongAlbum(songMenuSong)}>
+                <LineIcon name="albums" />
+                <span>查看专辑</span>
+              </button>
+              <button type="button" className="song-context-item" onClick={() => openSongInfo(songMenuSong.id)}>
+                <LineIcon name="about" />
+                <span>歌曲信息</span>
+              </button>
+              <button type="button" className="song-context-item danger" onClick={() => { void deleteSongById(songMenuSong.id); }}>
+                <LineIcon name="trash" />
+                <span>从音乐库删除</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {songInfoSong ? (
+        <div className="overlay" onClick={closeSongInfo}>
+          <section className="song-info-dialog" data-no-drag="true" onClick={(event) => event.stopPropagation()}>
+            <h3>歌曲信息</h3>
+            <div className="song-info-grid">
+              <div className="song-info-row">
+                <span>标题</span>
+                <strong>{songInfoSong.title}</strong>
+              </div>
+              <div className="song-info-row">
+                <span>艺术家</span>
+                <strong>{songInfoSong.artist}</strong>
+              </div>
+              <div className="song-info-row">
+                <span>专辑</span>
+                <strong>{songInfoSong.album}</strong>
+              </div>
+              <div className="song-info-row">
+                <span>时长</span>
+                <strong>{formatTime(songInfoSong.duration)}</strong>
+              </div>
+            </div>
+            <div className="song-info-actions">
+              <button type="button" className="ghost-btn" onClick={closeSongInfo}>关闭</button>
+            </div>
           </section>
         </div>
       ) : null}
@@ -4010,17 +4566,17 @@ export default function App() {
 
       {playlistMenuId ? (
         <div className="overlay" onClick={() => setPlaylistMenuId(null)}>
-          <div className="menu" onClick={(event) => event.stopPropagation()}>
+          <div className="menu playlist-menu" onClick={(event) => event.stopPropagation()}>
             <button
               type="button"
               className="menu-item"
               onClick={() => openRenamePlaylistDialog(playlistMenuId)}
             >
-              <span>✎</span>
+              <LineIcon name="edit" />
               <span>重命名</span>
             </button>
             <button type="button" className="menu-item danger" onClick={removePlaylist}>
-              <span>🗑</span>
+              <LineIcon name="trash" />
               <span>删除歌单</span>
             </button>
           </div>
