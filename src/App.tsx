@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import * as Checkbox from "@radix-ui/react-checkbox";
+import * as Select from "@radix-ui/react-select";
 
 type Page =
   | "songs"
@@ -12,6 +13,7 @@ type Page =
   | "artists"
   | "playlists"
   | "scan"
+  | "stream-config"
   | "stats"
   | "settings"
   | "settings-ui"
@@ -153,10 +155,6 @@ interface ConnectionTestResult {
   serverVersion?: string;
 }
 
-interface StreamScanOptions {
-  serverId?: string | null;
-}
-
 interface PlaylistStoreItem {
   id: string;
   name: string;
@@ -217,6 +215,7 @@ type IconName =
   | "volume"
   | "volume-mute"
   | "cloud-add"
+  | "folder"
   | "back"
   | "menu";
 
@@ -305,6 +304,9 @@ const LineIcon = ({ name, className }: { name: IconName; className?: string }) =
   if (name === "cloud-add") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 13v8" /><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="m8 17 4-4 4 4" /></svg>;
   }
+  if (name === "folder") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z" /></svg>;
+  }
   if (name === "back") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg>;
   }
@@ -337,11 +339,20 @@ const PAGE_TITLE: Record<Page, string> = {
   artists: "艺术家",
   playlists: "歌单",
   scan: "扫描音乐",
+  "stream-config": "流媒体配置",
   stats: "音乐库统计",
   settings: "设置",
   "settings-ui": "用户界面",
   about: "关于",
 };
+
+const STREAM_SERVER_TYPE_OPTIONS = [
+  { value: "navidrome", label: "Navidrome" },
+  { value: "jellyfin", label: "Jellyfin" },
+  { value: "emby", label: "Emby" },
+  { value: "subsonic", label: "Subsonic" },
+  { value: "opensubsonic", label: "OpenSubsonic" },
+] as const;
 
 const SONG_SORT_OPTIONS: Array<{ key: SongSortKey; label: string }> = [
   { key: "title", label: "标题" },
@@ -482,6 +493,24 @@ function toStreamConfigFromServer(server: DbStreamServer): StreamServerConfig {
   };
 }
 
+function resolveStreamTypeLabel(serverType: string): string {
+  const normalized = serverType.toLowerCase();
+  const option = STREAM_SERVER_TYPE_OPTIONS.find((item) => item.value === normalized);
+  return option?.label ?? serverType;
+}
+
+function createDefaultStreamForm(serverType = "navidrome"): StreamServerInput {
+  return {
+    serverType,
+    serverName: resolveStreamTypeLabel(serverType),
+    serverUrl: "",
+    username: "",
+    password: "",
+    accessToken: "",
+    userId: "",
+  };
+}
+
 function parseLrc(lyricText: string): ParsedLrcLine[] {
   const lines = lyricText.split(/\r?\n/);
   const result: ParsedLrcLine[] = [];
@@ -594,8 +623,7 @@ export default function App() {
   const [directories, setDirectories] = useState<string[]>([]);
   const [skipShortAudio, setSkipShortAudio] = useState(true);
   const [minDuration, setMinDuration] = useState(60);
-  const [scanMode, setScanMode] = useState<"full" | "incremental">("incremental");
-  const [showScanAdvanced, setShowScanAdvanced] = useState(false);
+  const [scanMode] = useState<"full" | "incremental">("incremental");
   const [scanRunning, setScanRunning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string>("");
 
@@ -641,19 +669,9 @@ export default function App() {
   const [songsBatchPlaylistName, setSongsBatchPlaylistName] = useState("");
 
   const [streamServers, setStreamServers] = useState<DbStreamServer[]>([]);
-  const [streamModalOpen, setStreamModalOpen] = useState(false);
-  const [streamForm, setStreamForm] = useState<StreamServerInput>({
-    serverType: "navidrome",
-    serverName: "",
-    serverUrl: "",
-    username: "",
-    password: "",
-    accessToken: "",
-    userId: "",
-  });
+  const [streamForm, setStreamForm] = useState<StreamServerInput>(() => createDefaultStreamForm());
   const [streamTesting, setStreamTesting] = useState(false);
   const [streamSaving, setStreamSaving] = useState(false);
-  const [streamScanningId, setStreamScanningId] = useState<string | null>(null);
   const [streamFormMessage, setStreamFormMessage] = useState<string>("");
 
   const [queueSongIds, setQueueSongIds] = useState<string[]>([]);
@@ -1564,6 +1582,8 @@ export default function App() {
     return payload?.coverUrl ?? null;
   }, [coverMap, songMenuSong]);
 
+  const primaryStreamServer = useMemo(() => streamServers[0] ?? null, [streamServers]);
+
   const qualityStats = useMemo(() => {
     const total = songs.length;
     const hiRes = songs.filter((song) => Boolean(song.isHr)).length;
@@ -1652,6 +1672,36 @@ export default function App() {
       setPlaylistDetailSearchQuery("");
     }
   }, [openedPlaylistId, playlists]);
+
+  useEffect(() => {
+    if (page !== "stream-config") {
+      return;
+    }
+
+    if (primaryStreamServer) {
+      setStreamForm({
+        serverType: primaryStreamServer.serverType,
+        serverName: primaryStreamServer.serverName || resolveStreamTypeLabel(primaryStreamServer.serverType),
+        serverUrl: primaryStreamServer.serverUrl,
+        username: primaryStreamServer.username,
+        password: primaryStreamServer.password,
+        accessToken: primaryStreamServer.accessToken ?? "",
+        userId: primaryStreamServer.userId ?? "",
+      });
+      setStreamFormMessage("");
+      return;
+    }
+
+    setStreamForm((previous) => {
+      const fallback = createDefaultStreamForm(previous.serverType);
+      return {
+        ...fallback,
+        serverType: previous.serverType,
+        serverName: previous.serverName.trim() || fallback.serverName,
+      };
+    });
+    setStreamFormMessage("");
+  }, [page, primaryStreamServer]);
 
   useEffect(() => {
     if (!songs.length) {
@@ -2447,14 +2497,23 @@ export default function App() {
     }
   };
 
-  const openStreamModal = () => {
+  const openStreamConfigPage = () => {
     setStreamFormMessage("");
-    setStreamModalOpen(true);
+    go("stream-config");
   };
 
-  const closeStreamModal = () => {
-    setStreamModalOpen(false);
-    setStreamFormMessage("");
+  const updateStreamServerType = (serverType: string) => {
+    setStreamForm((previous) => {
+      const previousLabel = resolveStreamTypeLabel(previous.serverType);
+      const nextLabel = resolveStreamTypeLabel(serverType);
+      const hasCustomName = previous.serverName.trim() && previous.serverName.trim() !== previousLabel;
+
+      return {
+        ...previous,
+        serverType,
+        serverName: hasCustomName ? previous.serverName : nextLabel,
+      };
+    });
   };
 
   const saveStreamServer = async () => {
@@ -2465,7 +2524,7 @@ export default function App() {
 
     const payload: StreamServerInput = {
       serverType: streamForm.serverType,
-      serverName: streamForm.serverName.trim(),
+      serverName: streamForm.serverName.trim() || resolveStreamTypeLabel(streamForm.serverType),
       serverUrl: streamForm.serverUrl.trim(),
       username: streamForm.username.trim(),
       password: streamForm.password,
@@ -2473,8 +2532,8 @@ export default function App() {
       userId: streamForm.userId?.trim() || undefined,
     };
 
-    if (!payload.serverName || !payload.serverUrl || !payload.username || !payload.password) {
-      setStreamFormMessage("请完整填写服务器名称、地址、用户名和密码。");
+    if (!payload.serverUrl || !payload.username || !payload.password) {
+      setStreamFormMessage("请完整填写服务器地址、用户名和密码。");
       return;
     }
 
@@ -2499,7 +2558,7 @@ export default function App() {
 
     const payload: StreamServerConfig = {
       serverType: streamForm.serverType,
-      serverName: streamForm.serverName.trim() || "Test Server",
+      serverName: streamForm.serverName.trim() || resolveStreamTypeLabel(streamForm.serverType),
       serverUrl: streamForm.serverUrl.trim(),
       username: streamForm.username.trim(),
       password: streamForm.password,
@@ -2530,38 +2589,31 @@ export default function App() {
     }
   };
 
-  const deleteStreamServer = async (serverId: string) => {
+  const clearStreamConfig = async () => {
+    const resetType = streamForm.serverType;
+
     if (!isTauriEnv) {
+      setStreamForm(createDefaultStreamForm(resetType));
+      setStreamFormMessage("已清空配置。");
       return;
     }
 
+    setStreamSaving(true);
+    setStreamFormMessage("");
     try {
-      await invoke<void>("db_delete_stream_server", { serverId });
-      setScanMessage("已删除流媒体服务器配置。");
+      if (streamServers.length) {
+        await Promise.all(
+          streamServers.map((server) => invoke<void>("db_delete_stream_server", { serverId: server.id })),
+        );
+      }
+
+      setStreamForm(createDefaultStreamForm(resetType));
+      setStreamFormMessage("已清除配置。");
       await refreshLibrary();
     } catch (error) {
-      setScanMessage(`删除服务器失败：${parseMessage(error)}`);
-    }
-  };
-
-  const scanStreamServer = async (serverId?: string) => {
-    if (!isTauriEnv) {
-      setScanMessage("浏览器预览模式无法扫描流媒体。");
-      return;
-    }
-
-    setStreamScanningId(serverId ?? "all");
-    try {
-      const options: StreamScanOptions = {
-        serverId: serverId ?? null,
-      };
-      const result = await invoke<ScanResult>("scan_stream_to_db", { options });
-      setScanMessage(`流媒体扫描完成：新增 ${result.added}，错误 ${result.errors}`);
-      await refreshLibrary();
-    } catch (error) {
-      setScanMessage(`流媒体扫描失败：${parseMessage(error)}`);
+      setStreamFormMessage(`清除失败：${parseMessage(error)}`);
     } finally {
-      setStreamScanningId(null);
+      setStreamSaving(false);
     }
   };
 
@@ -2694,7 +2746,7 @@ export default function App() {
   };
 
   const isPlaylistDetailView = page === "playlists" && Boolean(openedPlaylist);
-  const shouldShowBack = page === "settings-ui" || isPlaylistDetailView;
+  const shouldShowBack = page === "settings-ui" || page === "stream-config" || isPlaylistDetailView;
   const showSongsSearchBar = page === "songs" && songsSearchMode;
   const showAlbumsSearchBar = page === "albums" && albumsSearchMode;
   const showArtistsSearchBar = page === "artists" && artistsSearchMode;
@@ -2750,6 +2802,23 @@ export default function App() {
 
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().close();
+  }, [isTauriEnv]);
+
+  const exitApp = useCallback(async () => {
+    if (!isTauriEnv) {
+      if (typeof window !== "undefined") {
+        window.close();
+      }
+      return;
+    }
+
+    try {
+      await invoke("plugin:process|exit", { code: 0 });
+      return;
+    } catch {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().destroy();
+    }
   }, [isTauriEnv]);
 
   const startWindowDragging = useCallback(async (event: { target: EventTarget | null }) => {
@@ -3331,10 +3400,10 @@ export default function App() {
 
   const renderScanPage = () => (
     <section className="scan-page">
-      <div className="scan-panel compact">
-        <article className="scan-card">
-          <div className="scan-card-head">
-            <div className="scan-icon-box">📁</div>
+      <div className="scan-panel compact scan-panel-modern">
+        <article className="scan-card scan-folder-card">
+          <div className="scan-card-head scan-folder-head">
+            <div className="scan-icon-box scan-folder-icon-box"><LineIcon name="folder" /></div>
             <div>
               <h3>本地文件夹</h3>
               <p>选择文件夹...</p>
@@ -3361,76 +3430,24 @@ export default function App() {
           ) : null}
 
           <button type="button" className="scan-add-btn" onClick={addDirectory}>
-            📁 Add Folder
+            <LineIcon name="folder" />
+            <span>Add Folder</span>
           </button>
         </article>
 
-        <article className="scan-card scan-row">
+        <article className="scan-card scan-row scan-stream-row">
           <div className="scan-row-left">
-            <div className="scan-icon-box purple">◉</div>
+            <div className="scan-icon-box purple"><LineIcon name="scan" /></div>
             <div>
               <h3>流媒体配置</h3>
-              <p>{streamServers.length ? `已配置 ${streamServers.length} 个服务器` : "未配置"}</p>
+              <p>{primaryStreamServer ? primaryStreamServer.serverName : "未配置"}</p>
             </div>
           </div>
 
-          <button type="button" className="text-btn" onClick={openStreamModal}>
+          <button type="button" className="scan-config-btn" onClick={openStreamConfigPage}>
             配置
           </button>
         </article>
-
-        {streamServers.length ? (
-          <article className="scan-card stream-list-card">
-            <div className="stream-list-head">
-              <h3>流媒体服务器</h3>
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => {
-                  void scanStreamServer();
-                }}
-                disabled={streamScanningId === "all"}
-              >
-                {streamScanningId === "all" ? "扫描中..." : "扫描全部"}
-              </button>
-            </div>
-
-            <div className="stream-list">
-              {streamServers.map((server) => (
-                <div key={server.id} className="stream-item">
-                  <div className="stream-item-main">
-                    <strong>{server.serverName}</strong>
-                    <p>
-                      {server.serverType} · {server.serverUrl}
-                    </p>
-                  </div>
-
-                  <div className="stream-item-actions">
-                    <button
-                      type="button"
-                      className="text-btn"
-                      onClick={() => {
-                        void scanStreamServer(server.id);
-                      }}
-                      disabled={streamScanningId === server.id}
-                    >
-                      {streamScanningId === server.id ? "扫描中" : "扫描"}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-btn danger"
-                      onClick={() => {
-                        void deleteStreamServer(server.id);
-                      }}
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
-        ) : null}
 
         <article className="scan-card scan-row">
           <div>
@@ -3449,48 +3466,7 @@ export default function App() {
 
         <button
           type="button"
-          className="text-btn scan-advanced-toggle"
-          onClick={() => setShowScanAdvanced((previous) => !previous)}
-        >
-          {showScanAdvanced ? "收起高级选项" : "高级选项"}
-        </button>
-
-        {showScanAdvanced ? (
-          <>
-            <div className="duration-row">
-              <span>最短时长</span>
-              <input
-                type="range"
-                min={10}
-                max={180}
-                value={minDuration}
-                onChange={(event) => setMinDuration(Number(event.target.value))}
-              />
-              <span>{minDuration}s</span>
-            </div>
-
-            <div className="segment two scan-mode">
-              <button
-                type="button"
-                className={scanMode === "incremental" ? "active" : ""}
-                onClick={() => setScanMode("incremental")}
-              >
-                增量扫描
-              </button>
-              <button
-                type="button"
-                className={scanMode === "full" ? "active" : ""}
-                onClick={() => setScanMode("full")}
-              >
-                全量扫描
-              </button>
-            </div>
-          </>
-        ) : null}
-
-        <button
-          type="button"
-          className="primary-btn full"
+          className="primary-btn full scan-start-btn"
           onClick={startScan}
           disabled={scanRunning}
         >
@@ -3501,6 +3477,120 @@ export default function App() {
       </div>
     </section>
   );
+
+  const renderStreamConfigPage = () => {
+    const canTest = Boolean(streamForm.serverUrl.trim() && streamForm.username.trim() && streamForm.password);
+
+    return (
+      <section className="stream-config-page">
+        <div className="stream-config-shell" data-no-drag="true">
+          <article className="stream-config-card">
+            <label className="stream-config-field">
+              <span>服务器类型</span>
+              <Select.Root
+                value={streamForm.serverType}
+                onValueChange={updateStreamServerType}
+              >
+                <Select.Trigger className="stream-type-trigger" aria-label="服务器类型">
+                  <Select.Value />
+                  <Select.Icon className="stream-type-trigger-icon" aria-hidden>
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </Select.Icon>
+                </Select.Trigger>
+                <Select.Portal>
+                  <Select.Content className="stream-type-content" position="popper" sideOffset={6}>
+                    <Select.Viewport className="stream-type-viewport">
+                      {STREAM_SERVER_TYPE_OPTIONS.map((option) => (
+                        <Select.Item key={option.value} value={option.value} className="stream-type-item">
+                          <Select.ItemText>{option.label}</Select.ItemText>
+                        </Select.Item>
+                      ))}
+                    </Select.Viewport>
+                  </Select.Content>
+                </Select.Portal>
+              </Select.Root>
+            </label>
+
+            <label className="stream-config-field">
+              <span>服务器名称 (选填)</span>
+              <input
+                value={streamForm.serverName}
+                onChange={(event) => setStreamForm((previous) => ({ ...previous, serverName: event.target.value }))}
+                placeholder={resolveStreamTypeLabel(streamForm.serverType)}
+              />
+            </label>
+
+            <label className="stream-config-field">
+              <span>服务器地址</span>
+              <input
+                value={streamForm.serverUrl}
+                onChange={(event) => setStreamForm((previous) => ({ ...previous, serverUrl: event.target.value }))}
+                placeholder="https://music.example.com"
+              />
+            </label>
+
+            <label className="stream-config-field">
+              <span>用户名</span>
+              <input
+                value={streamForm.username}
+                onChange={(event) => setStreamForm((previous) => ({ ...previous, username: event.target.value }))}
+                placeholder="Username"
+              />
+            </label>
+
+            <label className="stream-config-field">
+              <span>密码</span>
+              <input
+                type="password"
+                value={streamForm.password}
+                onChange={(event) => setStreamForm((previous) => ({ ...previous, password: event.target.value }))}
+                placeholder="Password"
+              />
+            </label>
+
+            <button
+              type="button"
+              className="stream-config-test-btn"
+              disabled={!canTest || streamTesting || streamSaving}
+              onClick={() => {
+                void testStreamConnection();
+              }}
+            >
+              {streamTesting ? "测试中" : "测试连接"}
+            </button>
+          </article>
+
+          <div className="stream-config-actions-row">
+            <button
+              type="button"
+              className="stream-config-clear-btn"
+              onClick={() => {
+                void clearStreamConfig();
+              }}
+              disabled={streamSaving || streamTesting}
+            >
+              <LineIcon name="trash" />
+              <span>清除配置</span>
+            </button>
+            <button
+              type="button"
+              className="stream-config-save-btn"
+              onClick={() => {
+                void saveStreamServer();
+              }}
+              disabled={streamSaving || streamTesting}
+            >
+              {streamSaving ? "保存中" : "保存"}
+            </button>
+          </div>
+
+          {streamFormMessage ? <p className="status-text stream-config-status">{streamFormMessage}</p> : null}
+        </div>
+      </section>
+    );
+  };
 
   const renderStatsPage = () => {
     const ringStyle: CSSProperties = {
@@ -3783,6 +3873,9 @@ export default function App() {
     if (page === "scan") {
       return renderScanPage();
     }
+    if (page === "stream-config") {
+      return renderStreamConfigPage();
+    }
     if (page === "stats") {
       return renderStatsPage();
     }
@@ -3823,7 +3916,7 @@ export default function App() {
             aria-label="退出软件"
             title="退出软件"
             onClick={() => {
-              void closeWindow();
+              void exitApp();
             }}
           >
             <svg className="sidebar-top-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /></svg>
@@ -3849,7 +3942,9 @@ export default function App() {
           <p className="sidebar-title">系统</p>
           {NAV_SYSTEM.map((item) => {
             const isActive =
-              page === item.page || (item.page === "settings" && page === "settings-ui");
+              page === item.page
+              || (item.page === "settings" && page === "settings-ui")
+              || (item.page === "scan" && page === "stream-config");
 
             return (
               <button
@@ -4010,6 +4105,10 @@ export default function App() {
                       onClick={() => {
                         if (isPlaylistDetailView) {
                           closePlaylistDetail();
+                          return;
+                        }
+                        if (page === "stream-config") {
+                          go("scan");
                           return;
                         }
                         go("settings");
@@ -4431,101 +4530,6 @@ export default function App() {
               取消
             </button>
           </section>
-        </div>
-      ) : null}
-
-      {streamModalOpen ? (
-        <div className="overlay" onClick={closeStreamModal}>
-          <div className="dialog stream-dialog" onClick={(event) => event.stopPropagation()}>
-            <h3>流媒体配置</h3>
-
-            <label className="field">
-              <span>服务器类型</span>
-              <select
-                value={streamForm.serverType}
-                onChange={(event) =>
-                  setStreamForm((previous) => ({ ...previous, serverType: event.target.value }))
-                }
-              >
-                <option value="navidrome">Navidrome</option>
-                <option value="subsonic">Subsonic</option>
-                <option value="opensubsonic">OpenSubsonic</option>
-                <option value="jellyfin">Jellyfin</option>
-                <option value="emby">Emby</option>
-              </select>
-            </label>
-
-            <label className="field">
-              <span>服务器名称</span>
-              <input
-                value={streamForm.serverName}
-                onChange={(event) =>
-                  setStreamForm((previous) => ({ ...previous, serverName: event.target.value }))
-                }
-                placeholder="例如：家庭 Jellyfin"
-              />
-            </label>
-
-            <label className="field">
-              <span>服务器地址</span>
-              <input
-                value={streamForm.serverUrl}
-                onChange={(event) =>
-                  setStreamForm((previous) => ({ ...previous, serverUrl: event.target.value }))
-                }
-                placeholder="https://demo.example.com"
-              />
-            </label>
-
-            <label className="field two-col">
-              <span>用户名</span>
-              <input
-                value={streamForm.username}
-                onChange={(event) =>
-                  setStreamForm((previous) => ({ ...previous, username: event.target.value }))
-                }
-              />
-            </label>
-
-            <label className="field two-col">
-              <span>密码</span>
-              <input
-                type="password"
-                value={streamForm.password}
-                onChange={(event) =>
-                  setStreamForm((previous) => ({ ...previous, password: event.target.value }))
-                }
-              />
-            </label>
-
-            {streamFormMessage ? <p className="status-text">{streamFormMessage}</p> : null}
-
-            <div className="dialog-actions three">
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => {
-                  void testStreamConnection();
-                }}
-                disabled={streamTesting}
-              >
-                {streamTesting ? "测试中" : "测试"}
-              </button>
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={() => {
-                  void saveStreamServer();
-                }}
-                disabled={streamSaving}
-              >
-                {streamSaving ? "保存中" : "保存"}
-              </button>
-              <button type="button" className="ghost-btn" onClick={closeStreamModal}>
-                关闭
-              </button>
-            </div>
-          </div>
         </div>
       ) : null}
 
