@@ -294,6 +294,16 @@ button {
   flex-shrink: 0;
 }
 
+.topbar-left .system-title {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  height: 25px;
+  font-size: 25px;
+  line-height: 25px;
+  flex-shrink: 0;
+}
+
 .window-controls {
   display: flex;
   align-items: center;
@@ -3527,6 +3537,12 @@ button {
 
   .topbar-left .page-title {
     font-size: 30px;
+  }
+
+  .topbar-left .system-title {
+    height: 25px;
+    font-size: 25px;
+    line-height: 25px;
   }
 
   .topbar-main.searching {

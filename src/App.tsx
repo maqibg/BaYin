@@ -2890,6 +2890,12 @@ export default function App() {
     || showArtistsSearchBar
     || showPlaylistsSearchBar
     || showPlaylistDetailSearchBar;
+  const isSystemTitlePage = page === "scan"
+    || page === "stats"
+    || page === "settings"
+    || page === "about"
+    || page === "settings-ui"
+    || page === "stream-config";
   const pageTitleText = isPlaylistDetailView && openedPlaylist ? openedPlaylist.name : PAGE_TITLE[page];
 
   const openExternalUrl = useCallback(
@@ -4277,7 +4283,7 @@ export default function App() {
                     </button>
                   ) : null}
 
-                  <h1 className={`page-title ${page === "songs" || page === "albums" || page === "artists" || page === "playlists" ? "songs-title" : ""}`}>{pageTitleText}</h1>
+                  <h1 className={`page-title ${page === "songs" || page === "albums" || page === "artists" || page === "playlists" ? "songs-title" : ""} ${isSystemTitlePage ? "system-title" : ""}`}>{pageTitleText}</h1>
                 </div>
 
                 <div className="page-header-actions" data-no-drag="true">{headerActions}</div>
