@@ -3274,15 +3274,26 @@ button {
 }
 
 .stats-side-card.total {
-  background: #eef4ff;
+  background: linear-gradient(135deg, #f3f6ff 0%, #ece8fa 100%);
+  border-color: #d9dff0;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 104px;
+  padding: 18px 22px;
+  gap: 14px;
 }
 
 .stats-side-card.total p {
   font-size: 16px;
+  color: #2f5184;
+  font-weight: 500;
 }
 
 .stats-side-card.total strong {
   color: #2563eb;
+  font-size: 48px;
+  line-height: 1;
 }
 
 .settings-shortcuts {
@@ -3441,6 +3452,14 @@ button {
 .theme-dark .stats-side-card.total {
   background: #1b2739;
   border-color: #2d3a51;
+}
+
+.theme-dark .stats-side-card.total p {
+  color: #b8c9ea;
+}
+
+.theme-dark .stats-side-card.total strong {
+  color: #60a5fa;
 }
 
 .theme-dark .stats-side-card p,
@@ -3609,6 +3628,16 @@ button {
 
   .stats-side-card strong {
     font-size: 30px;
+  }
+
+  .stats-side-card.total {
+    min-height: 88px;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .stats-side-card.total strong {
+    font-size: 36px;
   }
 
   .stats-side-card small {
