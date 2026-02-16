@@ -287,7 +287,7 @@ button {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  width: 48px;
+  min-width: 48px;
   height: 26px;
   font-size: 24px;
   line-height: 26px;
