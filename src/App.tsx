@@ -18,8 +18,7 @@ type Page =
   | "stream-config"
   | "stats"
   | "settings"
-  | "settings-ui"
-  | "about";
+  | "settings-ui";
 
 type DialogMode = "create" | "rename" | null;
 type Language = "中文" | "English";
@@ -365,7 +364,6 @@ const NAV_SYSTEM: Array<{ page: Page; label: string; icon: IconName }> = [
   { page: "scan", label: "扫描音乐", icon: "scan" },
   { page: "stats", label: "音乐库统计", icon: "stats" },
   { page: "settings", label: "设置", icon: "settings" },
-  { page: "about", label: "关于", icon: "about" },
 ];
 
 const PAGE_TITLE: Record<Page, string> = {
@@ -378,7 +376,6 @@ const PAGE_TITLE: Record<Page, string> = {
   stats: "音乐库统计",
   settings: "设置",
   "settings-ui": "用户界面",
-  about: "关于",
 };
 
 const STREAM_SERVER_TYPE_OPTIONS = [
@@ -462,27 +459,12 @@ const WEB_SAMPLE_SONGS: DbSong[] = [
   },
 ];
 
-const ABOUT_LINKS = ["捐赠支持", "创作者", "使用条款", "隐私政策", "开源许可"];
 
 const UI_SETTINGS_KEY = "bayin.uiSettings";
 const PLAYLISTS_KEY = "bayin.playlists";
 const THEME_KEY = "bayin.theme";
 
-const ABOUT_URLS: Record<string, string> = {
-  捐赠支持: "https://github.com/CallmeLins/BaYin#支持项目",
-  创作者: "https://github.com/CallmeLins/BaYin",
-  使用条款: "https://github.com/CallmeLins/BaYin/blob/main/README.md",
-  隐私政策: "https://github.com/CallmeLins/BaYin/blob/main/README.md",
-  开源许可: "https://github.com/CallmeLins/BaYin/blob/main/LICENSE",
-};
 
-const ABOUT_ICON_META: Record<string, { icon: string; tone: string }> = {
-  捐赠支持: { icon: "❤", tone: "red" },
-  创作者: { icon: "👥", tone: "blue" },
-  使用条款: { icon: "📄", tone: "gray" },
-  隐私政策: { icon: "🛡", tone: "green" },
-  开源许可: { icon: "‹›", tone: "orange" },
-};
 
 function parseMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -2927,7 +2909,6 @@ export default function App() {
   const isSystemTitlePage = page === "scan"
     || page === "stats"
     || page === "settings"
-    || page === "about"
     || page === "settings-ui"
     || page === "stream-config";
   const pageTitleText = isPlaylistDetailView && openedPlaylist ? openedPlaylist.name : PAGE_TITLE[page];
@@ -3064,14 +3045,6 @@ export default function App() {
             <LineIcon name="more" />
           </button>
         </>
-      );
-    }
-
-    if (page === "about") {
-      return (
-        <button type="button" className="icon-btn" aria-label="更多">
-          <LineIcon name="more" />
-        </button>
       );
     }
 
@@ -4018,43 +3991,6 @@ export default function App() {
       </article>
     </section>
   );
-
-  const renderAboutPage = () => (
-    <section className="about-page about-page-centered">
-      <div className="about-hero">
-        <img src="/app-icon.png" alt="BaYin" className="about-logo" />
-        <h2>BaYin</h2>
-        <p>版本 1.1.6</p>
-      </div>
-
-      <article className="settings-card about-links-card">
-        {ABOUT_LINKS.map((item) => {
-          const meta = ABOUT_ICON_META[item] ?? { icon: "•", tone: "gray" };
-
-          return (
-            <button
-              key={item}
-              type="button"
-              className="settings-item rich about-link-row"
-              onClick={() => {
-                const url = ABOUT_URLS[item];
-                if (url) {
-                  void openExternalUrl(url);
-                }
-              }}
-            >
-              <span className={`settings-icon ${meta.tone}`}>{meta.icon}</span>
-              <span className="settings-item-main"><strong>{item}</strong></span>
-              <span>›</span>
-            </button>
-          );
-        })}
-      </article>
-
-      <p className="about-copyright">© 2024 BaYin Music. All rights reserved.</p>
-    </section>
-  );
-
   const pageContent = (() => {
     if (page === "songs") {
       return renderSongsPage();
@@ -4084,7 +4020,7 @@ export default function App() {
       return renderSettingsUiPage();
     }
 
-    return renderAboutPage();
+    return renderSettingsPage();
   })();
 
   return (
