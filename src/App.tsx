@@ -6,6 +6,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import * as Checkbox from "@radix-ui/react-checkbox";
 import * as Select from "@radix-ui/react-select";
+import { DiscIcon, ImageIcon } from "@radix-ui/react-icons";
 import { animate, motion } from "framer-motion";
 
 type Page =
@@ -218,7 +219,13 @@ type IconName =
   | "cloud-add"
   | "folder"
   | "back"
-  | "menu";
+  | "menu"
+  | "palette"
+  | "help-circle"
+  | "download"
+  | "image-off"
+  | "alert"
+  | "user";
 
 const LineIcon = ({ name, className }: { name: IconName; className?: string }) => {
   const classes = className ? `line-icon ${className}` : "line-icon";
@@ -245,8 +252,14 @@ const LineIcon = ({ name, className }: { name: IconName; className?: string }) =
   if (name === "settings") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /><circle cx="12" cy="12" r="3" /></svg>;
   }
+  if (name === "palette") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 22a10 10 0 1 1 10-10" /><path d="M7 13h.01" /><path d="M10 7h.01" /><path d="M14 7h.01" /><path d="M17 11h.01" /><path d="M21 16a2 2 0 0 1-2 2h-2a2 2 0 0 0-2 2v2" /></svg>;
+  }
   if (name === "about") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
+  }
+  if (name === "help-circle") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>;
   }
   if (name === "search") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><circle cx="11" cy="11" r="8" /><path d="m21 21-4.34-4.34" /></svg>;
@@ -305,8 +318,20 @@ const LineIcon = ({ name, className }: { name: IconName; className?: string }) =
   if (name === "cloud-add") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 13v8" /><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="m8 17 4-4 4 4" /></svg>;
   }
+  if (name === "download") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 15V3" /><path d="m8 11 4 4 4-4" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg>;
+  }
   if (name === "folder") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z" /></svg>;
+  }
+  if (name === "image-off") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m7 15 3-3 2.5 2.5L15 12l4 4" /><circle cx="9" cy="9" r="1.15" /><path d="M4.6 4.6 7.4 7.4" /><path d="M7.4 4.6 4.6 7.4" /></svg>;
+  }
+  if (name === "alert") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="m10.29 3.86-8.12 14A2 2 0 0 0 3.91 21h16.18a2 2 0 0 0 1.74-3.03l-8.12-14a2 2 0 0 0-3.42 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>;
+  }
+  if (name === "user") {
+    return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>;
   }
   if (name === "back") {
     return <svg className={classes} viewBox="0 0 24 24" fill="none" aria-hidden><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg>;
@@ -318,6 +343,15 @@ const LineIcon = ({ name, className }: { name: IconName; className?: string }) =
   return null;
 };
 
+const CoverCacheClearIcon = () => <ImageIcon className="cover-cache-clear-image" aria-hidden />;
+
+const SongStatsIcon = () => (
+  <svg className="chip-radix-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="6.5" cy="18" r="2.6" />
+    <circle cx="17.5" cy="15.8" r="2.6" />
+    <path d="M9.5 18V5.2l10-1.8v12.4" />
+  </svg>
+);
 const ALPHABET_INDEX = ["0", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")];
 
 const NAV_LIBRARY: Array<{ page: Page; label: string; icon: IconName }> = [
@@ -3803,19 +3837,8 @@ export default function App() {
     <section className="settings-page">
       <article className="settings-card settings-shortcuts">
         <button type="button" className="settings-item rich" onClick={() => go("settings-ui")}>
-          <span className="settings-icon blue">🖥</span>
+          <span className="settings-icon blue"><LineIcon name="palette" /></span>
           <span className="settings-item-main"><strong>用户界面</strong></span>
-          <span>›</span>
-        </button>
-        <button
-          type="button"
-          className="settings-item rich"
-          onClick={() => {
-            void openExternalUrl("https://github.com/CallmeLins/BaYin/issues");
-          }}
-        >
-          <span className="settings-icon purple">?</span>
-          <span className="settings-item-main"><strong>帮助与反馈</strong></span>
           <span>›</span>
         </button>
         <button
@@ -3825,7 +3848,7 @@ export default function App() {
             void openExternalUrl("https://github.com/CallmeLins/BaYin/releases");
           }}
         >
-          <span className="settings-icon green">↓</span>
+          <span className="settings-icon green"><LineIcon name="download" /></span>
           <span className="settings-item-main"><strong>软件更新</strong></span>
           <span>›</span>
         </button>
@@ -3833,59 +3856,59 @@ export default function App() {
 
       <article className="settings-card settings-manage-card">
         <div className="settings-head with-icon">
-          <span className="settings-icon orange">◍</span>
+          <span className="settings-icon orange"><LineIcon name="stats" /></span>
           <div>
             <h3>音乐库管理</h3>
-            <p>Manage your music database and cache</p>
+            <p>管理音乐数据库与缓存</p>
           </div>
         </div>
 
         <div className="settings-stats-row">
           <div className="chip blue">
-            <em>♫</em>
+            <span className="chip-icon"><SongStatsIcon /></span>
             <strong>{stats.totalSongs}</strong>
             <span>歌曲</span>
           </div>
           <div className="chip green">
-            <em>◎</em>
+            <span className="chip-icon"><DiscIcon className="chip-radix-icon" /></span>
             <strong>{stats.totalAlbums}</strong>
             <span>专辑</span>
           </div>
           <div className="chip purple">
-            <em>◉</em>
+            <span className="chip-icon"><LineIcon name="user" /></span>
             <strong>{stats.totalArtists}</strong>
             <span>艺术家</span>
           </div>
         </div>
 
         <p className="settings-meta-line">
-          Local: {stats.localSongs} &nbsp; Stream: {stats.streamSongs} &nbsp; Covers: {coverStats.fileCount}
+          本地: {stats.localSongs} &nbsp; 流媒体: {stats.streamSongs} &nbsp; 封面: {coverStats.fileCount}
           &nbsp;({coverStats.totalSizeMb.toFixed(1)} MB)
         </p>
 
         <button type="button" className="settings-item rich" onClick={cleanupCoverCache}>
-          <span className="settings-icon gray">⌧</span>
+          <span className="settings-icon gray"><CoverCacheClearIcon /></span>
           <span className="settings-item-main">
             <strong>清理封面缓存</strong>
-            <small>Remove orphaned cover images</small>
+            <small>删除无关联封面图片</small>
           </span>
           <span>›</span>
         </button>
 
         <button type="button" className="settings-item rich" onClick={cleanupMissingSongs}>
-          <span className="settings-icon gray">🗑</span>
+          <span className="settings-icon gray"><LineIcon name="trash" /></span>
           <span className="settings-item-main">
             <strong>清理失效歌曲</strong>
-            <small>Remove entries for deleted files</small>
+            <small>删除已删除文件的条目</small>
           </span>
           <span>›</span>
         </button>
 
         <button type="button" className="settings-item rich danger" onClick={() => { void clearMusicLibrary(); }}>
-          <span className="settings-icon red">⚠</span>
+          <span className="settings-icon red"><LineIcon name="alert" /></span>
           <span className="settings-item-main">
             <strong>清空音乐库</strong>
-            <small>Remove all songs and cache</small>
+            <small>删除全部歌曲与缓存</small>
           </span>
           <span>›</span>
         </button>
@@ -3909,7 +3932,19 @@ export default function App() {
   const renderSettingsUiPage = () => (
     <section className="settings-ui-page">
       <article className="settings-card padded">
-        <p className="block-title">语言</p>
+        <p className="block-title">外观</p>
+        <div className="setting-line setting-line-divider">
+          <span>深色模式</span>
+          <button
+            type="button"
+            className={`switch ${theme === "dark" ? "on" : ""}`}
+            onClick={() => setTheme((previous) => (previous === "dark" ? "light" : "dark"))}
+          >
+            <span />
+          </button>
+        </div>
+
+        <p className="sub-title ui-sub-title">语言</p>
         <div className="segment two">
           {["中文", "English"].map((item) => (
             <button
@@ -3938,7 +3973,7 @@ export default function App() {
           onChange={(event) => setLyricSize(Number(event.target.value))}
         />
 
-        <div className="setting-line with-gap">
+        <div className="setting-line with-gap setting-line-divider">
           <span>歌词居中</span>
           <button
             type="button"
@@ -3949,16 +3984,20 @@ export default function App() {
           </button>
         </div>
 
-        <p className="sub-title">字体粗细</p>
+        <p className="sub-title ui-sub-title">字体粗细</p>
         <div className="segment three">
-          {["Normal", "Medium", "Bold"].map((item) => (
+          {[
+            { value: "Normal", label: "常规" },
+            { value: "Medium", label: "中等" },
+            { value: "Bold", label: "加粗" },
+          ].map((item) => (
             <button
-              key={item}
+              key={item.value}
               type="button"
-              className={fontWeight === item ? "active" : ""}
-              onClick={() => setFontWeight(item as FontWeightOption)}
+              className={fontWeight === item.value ? "active" : ""}
+              onClick={() => setFontWeight(item.value as FontWeightOption)}
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </div>
