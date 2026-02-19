@@ -78,11 +78,14 @@ impl AudioDecoder {
         // Calculate duration
         let duration_secs = codec_params
             .n_frames
-            .map(|n| n as f64 / sample_rate as f64)
-            .or_else(|| {
-                codec_params
-                    .time_base
-                    .and_then(|tb| codec_params.n_frames.map(|n| tb.calc_time(n).seconds as f64))
+            .filter(|&n| n > 0)
+            .map(|n| {
+                if let Some(tb) = codec_params.time_base {
+                    let t = tb.calc_time(n);
+                    t.seconds as f64 + t.frac
+                } else {
+                    n as f64 / sample_rate as f64
+                }
             })
             .unwrap_or(0.0);
 
@@ -137,8 +140,13 @@ impl AudioDecoder {
 
     /// Seek to a position in seconds.
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
+        let clamped = if self.info.duration_secs > 0.0 {
+            position_secs.clamp(0.0, (self.info.duration_secs - 0.1).max(0.0))
+        } else {
+            position_secs.max(0.0)
+        };
         let seek_to = SeekTo::Time {
-            time: Time::from(position_secs),
+            time: Time::from(clamped),
             track_id: Some(self.track_id),
         };
         self.format_reader

@@ -329,10 +329,15 @@ fn audio_thread(
                 }
                 AudioCommand::Seek { position_secs: pos } => {
                     if let Some(ref mut dec) = decoder {
-                        if let Err(e) = dec.seek(pos) {
+                        let clamped = if duration_secs > 0.0 {
+                            pos.clamp(0.0, duration_secs)
+                        } else {
+                            pos.max(0.0)
+                        };
+                        if let Err(e) = dec.seek(clamped) {
                             eprintln!("Seek error: {}", e);
                         } else {
-                            position_secs = pos;
+                            position_secs = clamped;
                             if let Some(ref out) = output {
                                 out.flush();
                             }
@@ -426,7 +431,11 @@ fn audio_thread(
                             }
                         }
                         Ok(None) => {
-                            // End of stream
+                            // End of stream — use accumulated position as true duration
+                            // if the initial duration was unknown or suspiciously off
+                            if duration_secs <= 0.0 || (position_secs - duration_secs).abs() > 1.0 {
+                                duration_secs = position_secs;
+                            }
                             is_playing = false;
                             fade_state = FadeState::None;
                             update_state(&state, false, duration_secs, duration_secs, volume);
