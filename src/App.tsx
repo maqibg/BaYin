@@ -19,7 +19,8 @@ type Page =
   | "stream-config"
   | "stats"
   | "settings"
-  | "settings-ui";
+  | "settings-ui"
+  | "settings-lyrics";
 
 type DialogMode = "create" | "rename" | null;
 type Language = "中文" | "English";
@@ -413,6 +414,7 @@ const PAGE_TITLE: Record<Page, string> = {
   stats: "音乐库统计",
   settings: "设置",
   "settings-ui": "用户界面",
+  "settings-lyrics": "在线歌词",
 };
 
 const STREAM_SERVER_TYPE_OPTIONS = [
@@ -2493,6 +2495,53 @@ export default function App() {
     }
   }, [currentSong, fetchLyricsForSong]);
 
+  const toggleLyricProviderEnabled = useCallback((provider: LyricProvider) => {
+    setLyricProviderEnabled((previous) => {
+      const nextEnabled = !previous[provider];
+      if (!nextEnabled) {
+        const enabledCount = Object.values(previous).filter(Boolean).length;
+        if (enabledCount <= 1) {
+          setScanMessage("至少保留一个在线歌词来源");
+          return previous;
+        }
+      }
+
+      return {
+        ...previous,
+        [provider]: nextEnabled,
+      };
+    });
+  }, []);
+
+  const moveLyricProviderPreference = useCallback((provider: LyricProvider, direction: "up" | "down") => {
+    setLyricProviderPreference((previous) => {
+      const currentIndex = previous.indexOf(provider);
+      if (currentIndex < 0) {
+        return previous;
+      }
+
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= previous.length) {
+        return previous;
+      }
+
+      const next = [...previous];
+      [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
+      return next;
+    });
+  }, []);
+
+  const resetOnlineLyricSettings = useCallback(() => {
+    setLyricSourceMode("local");
+    setLyricProviderEnabled(DEFAULT_LYRIC_PROVIDER_ENABLED);
+    setLyricProviderPreference(DEFAULT_LYRIC_PROVIDER_ORDER);
+    setLyricAutoPerSourceLimit(8);
+    setLyricManualPerSourceLimit(12);
+    if (currentSong) {
+      void fetchLyricsForSong(currentSong, "local");
+    }
+  }, [currentSong, fetchLyricsForSong]);
+
   const searchLyricSourceDialogCandidates = useCallback(
     async (keyword?: string) => {
       if (!currentSong || !isTauriEnv) {
@@ -3587,7 +3636,10 @@ export default function App() {
   };
 
   const isPlaylistDetailView = page === "playlists" && Boolean(openedPlaylist);
-  const shouldShowBack = page === "settings-ui" || page === "stream-config" || isPlaylistDetailView;
+  const shouldShowBack = page === "settings-ui"
+    || page === "settings-lyrics"
+    || page === "stream-config"
+    || isPlaylistDetailView;
   const showSongsSearchBar = page === "songs" && songsSearchMode;
   const showAlbumsSearchBar = page === "albums" && albumsSearchMode;
   const showArtistsSearchBar = page === "artists" && artistsSearchMode;
@@ -3602,6 +3654,7 @@ export default function App() {
     || page === "stats"
     || page === "settings"
     || page === "settings-ui"
+    || page === "settings-lyrics"
     || page === "stream-config";
   const pageTitleText = isPlaylistDetailView && openedPlaylist ? openedPlaylist.name : PAGE_TITLE[page];
 
@@ -4498,12 +4551,131 @@ export default function App() {
     </section>
   );
 
+  const renderOnlineLyricSettingsCard = () => (
+    <article className="settings-card padded settings-online-lyrics-card">
+      <div className="settings-online-lyrics-head">
+        <p className="block-title">在线歌词</p>
+        <button type="button" className="text-btn" onClick={resetOnlineLyricSettings}>恢复默认</button>
+      </div>
+
+      <p className="sub-title ui-sub-title">默认来源</p>
+      <div className="segment two">
+        {[
+          { value: "local", label: "本地优先" },
+          { value: "online", label: "在线优先" },
+        ].map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            className={lyricSourceMode === item.value ? "active" : ""}
+            onClick={() => setLyricSourceModeAndReload(item.value as LyricSourceMode)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="sub-title ui-sub-title">来源启用</p>
+      <div className="setting-line setting-line-divider">
+        <span>QQ 音乐</span>
+        <button
+          type="button"
+          className={`switch ${lyricProviderEnabled.qq ? "on" : ""}`}
+          onClick={() => toggleLyricProviderEnabled("qq")}
+        >
+          <span />
+        </button>
+      </div>
+
+      <div className="setting-line setting-line-divider">
+        <span>酷狗音乐</span>
+        <button
+          type="button"
+          className={`switch ${lyricProviderEnabled.kugou ? "on" : ""}`}
+          onClick={() => toggleLyricProviderEnabled("kugou")}
+        >
+          <span />
+        </button>
+      </div>
+
+      <div className="setting-line setting-line-divider">
+        <span>网易云</span>
+        <button
+          type="button"
+          className={`switch ${lyricProviderEnabled.netease ? "on" : ""}`}
+          onClick={() => toggleLyricProviderEnabled("netease")}
+        >
+          <span />
+        </button>
+      </div>
+
+      <p className="sub-title ui-sub-title">来源优先级（高 → 低）</p>
+      <div className="online-lyric-order-list">
+        {lyricProviderPreference.map((provider, index) => (
+          <div key={provider} className="setting-line online-lyric-order-item">
+            <span className="online-lyric-order-label">
+              <span className="online-lyric-order-index">{index + 1}</span>
+              {resolveLyricProviderLabel(provider)}
+            </span>
+            <span className="online-lyric-order-actions">
+              <button
+                type="button"
+                className="online-lyric-order-btn"
+                onClick={() => moveLyricProviderPreference(provider, "up")}
+                disabled={index === 0}
+              >
+                上移
+              </button>
+              <button
+                type="button"
+                className="online-lyric-order-btn"
+                onClick={() => moveLyricProviderPreference(provider, "down")}
+                disabled={index === lyricProviderPreference.length - 1}
+              >
+                下移
+              </button>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="setting-line">
+        <span>自动匹配每源上限</span>
+        <span>{lyricAutoPerSourceLimit}</span>
+      </div>
+      <input
+        type="range"
+        min={1}
+        max={20}
+        value={lyricAutoPerSourceLimit}
+        onChange={(event) => setLyricAutoPerSourceLimit(Number(event.target.value))}
+      />
+
+      <div className="setting-line">
+        <span>手动搜索每源上限</span>
+        <span>{lyricManualPerSourceLimit}</span>
+      </div>
+      <input
+        type="range"
+        min={1}
+        max={30}
+        value={lyricManualPerSourceLimit}
+        onChange={(event) => setLyricManualPerSourceLimit(Number(event.target.value))}
+      />
+    </article>
+  );
+
   const renderSettingsPage = () => (
     <section className="settings-page">
       <article className="settings-card settings-shortcuts">
         <button type="button" className="settings-item rich" onClick={() => go("settings-ui")}>
           <span className="settings-icon blue"><LineIcon name="palette" /></span>
           <span className="settings-item-main"><strong>用户界面</strong></span>
+          <span>›</span>
+        </button>
+        <button type="button" className="settings-item rich" onClick={() => go("settings-lyrics")}>
+          <span className="settings-icon purple"><LineIcon name="lyrics" /></span>
+          <span className="settings-item-main"><strong>在线歌词</strong></span>
           <span>›</span>
         </button>
         <button
@@ -4669,84 +4841,6 @@ export default function App() {
       </article>
 
       <article className="settings-card padded">
-        <p className="block-title">在线歌词</p>
-
-        <p className="sub-title ui-sub-title">默认来源</p>
-        <div className="segment two">
-          {[
-            { value: "local", label: "本地优先" },
-            { value: "online", label: "在线优先" },
-          ].map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              className={lyricSourceMode === item.value ? "active" : ""}
-              onClick={() => setLyricSourceModeAndReload(item.value as LyricSourceMode)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="setting-line with-gap setting-line-divider">
-          <span>QQ 音乐</span>
-          <button
-            type="button"
-            className={`switch ${lyricProviderEnabled.qq ? "on" : ""}`}
-            onClick={() => setLyricProviderEnabled((previous) => ({ ...previous, qq: !previous.qq }))}
-          >
-            <span />
-          </button>
-        </div>
-
-        <div className="setting-line with-gap setting-line-divider">
-          <span>酷狗音乐</span>
-          <button
-            type="button"
-            className={`switch ${lyricProviderEnabled.kugou ? "on" : ""}`}
-            onClick={() => setLyricProviderEnabled((previous) => ({ ...previous, kugou: !previous.kugou }))}
-          >
-            <span />
-          </button>
-        </div>
-
-        <div className="setting-line with-gap setting-line-divider">
-          <span>网易云</span>
-          <button
-            type="button"
-            className={`switch ${lyricProviderEnabled.netease ? "on" : ""}`}
-            onClick={() => setLyricProviderEnabled((previous) => ({ ...previous, netease: !previous.netease }))}
-          >
-            <span />
-          </button>
-        </div>
-
-        <div className="setting-line">
-          <span>自动匹配每源上限</span>
-          <span>{lyricAutoPerSourceLimit}</span>
-        </div>
-        <input
-          type="range"
-          min={1}
-          max={20}
-          value={lyricAutoPerSourceLimit}
-          onChange={(event) => setLyricAutoPerSourceLimit(Number(event.target.value))}
-        />
-
-        <div className="setting-line">
-          <span>手动搜索每源上限</span>
-          <span>{lyricManualPerSourceLimit}</span>
-        </div>
-        <input
-          type="range"
-          min={1}
-          max={30}
-          value={lyricManualPerSourceLimit}
-          onChange={(event) => setLyricManualPerSourceLimit(Number(event.target.value))}
-        />
-      </article>
-
-      <article className="settings-card padded">
         <p className="block-title">列表</p>
         <div className="setting-line">
           <span>显示封面</span>
@@ -4810,6 +4904,13 @@ export default function App() {
       </article>
     </section>
   );
+
+  const renderSettingsLyricsPage = () => (
+    <section className="settings-ui-page">
+      {renderOnlineLyricSettingsCard()}
+    </section>
+  );
+
   const pageContent = (() => {
     if (page === "songs") {
       return renderSongsPage();
@@ -4837,6 +4938,9 @@ export default function App() {
     }
     if (page === "settings-ui") {
       return renderSettingsUiPage();
+    }
+    if (page === "settings-lyrics") {
+      return renderSettingsLyricsPage();
     }
 
     return renderSettingsPage();
@@ -4896,7 +5000,7 @@ export default function App() {
           {NAV_SYSTEM.map((item) => {
             const isActive =
               page === item.page
-              || (item.page === "settings" && page === "settings-ui")
+              || (item.page === "settings" && (page === "settings-ui" || page === "settings-lyrics"))
               || (item.page === "scan" && page === "stream-config");
 
             return (

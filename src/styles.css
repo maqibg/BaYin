@@ -1571,8 +1571,122 @@ button {
   margin-top: 6px;
 }
 
+.settings-online-lyrics-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-online-lyrics-card .setting-line-divider {
+  border-bottom: 1px solid #edf1f6;
+  padding-bottom: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-online-lyrics-card input[type="range"] {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.online-lyric-order-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.online-lyric-order-item {
+  margin-top: 0;
+  border: 1px solid #edf1f6;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f9fbff;
+}
+
+.online-lyric-order-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #2f3948;
+}
+
+.online-lyric-order-index {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #dbe7ff;
+  color: #3b82f6;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.online-lyric-order-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.online-lyric-order-btn {
+  height: 28px;
+  min-width: 52px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #d2dcf0;
+  background: #ffffff;
+  color: #4b5f7c;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.online-lyric-order-btn:hover:not(:disabled) {
+  background: #f3f7ff;
+  border-color: #b8caea;
+  color: #2c4f86;
+}
+
+.online-lyric-order-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .theme-dark .settings-ui-page .setting-line-divider {
   border-bottom-color: #2a354a;
+}
+
+.theme-dark .settings-online-lyrics-card .setting-line-divider {
+  border-bottom-color: #2a354a;
+}
+
+.theme-dark .online-lyric-order-item {
+  border-color: #2c3a52;
+  background: #1a2538;
+}
+
+.theme-dark .online-lyric-order-label {
+  color: #dbe6f8;
+}
+
+.theme-dark .online-lyric-order-index {
+  background: #2a3e62;
+  color: #90b8ff;
+}
+
+.theme-dark .online-lyric-order-btn {
+  border-color: #3a4b6a;
+  background: #152136;
+  color: #b7cae7;
+}
+
+.theme-dark .online-lyric-order-btn:hover:not(:disabled) {
+  background: #1b2b44;
+  border-color: #5170a7;
+  color: #cbe2ff;
 }
 
 .settings-ui-page input[type="range"] {
