@@ -188,6 +188,14 @@ fn convert_item(item: &JellyfinItem, config: &StreamServerConfig) -> ScannedSong
         cover_url,
         is_hr: Some(is_hr),
         is_sq: Some(is_sq),
+        format: item.container.as_ref().map(|c| c.to_uppercase()),
+        bit_depth: audio_stream.and_then(|s| s.bit_depth),
+        sample_rate: audio_stream.and_then(|s| s.sample_rate),
+        bitrate: item.media_sources.as_ref()
+            .and_then(|sources| sources.first())
+            .and_then(|s| s.bitrate)
+            .map(|b| b / 1000), // Jellyfin reports bps, convert to kbps
+        channels: audio_stream.and_then(|s| s.channels).map(|c| c as u8),
     }
 }
 

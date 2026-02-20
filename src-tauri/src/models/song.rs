@@ -17,6 +17,16 @@ pub struct ScannedSong {
     pub is_hr: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_sq: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit_depth: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_rate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitrate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channels: Option<u8>,
 }
 
 /// 扫描选项

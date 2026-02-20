@@ -118,7 +118,7 @@ pub fn get_songs_by_album(conn: &Connection, album: &str) -> Result<Vec<super::D
     let mut stmt = conn.prepare(
         "SELECT id, title, artist, album, duration, file_path, file_size,
                 is_hr, is_sq, cover_hash, source_type, server_id, server_song_id,
-                stream_info, file_modified
+                stream_info, file_modified, format, bit_depth, sample_rate, bitrate, channels
          FROM songs
          WHERE album = ?1
          ORDER BY title COLLATE NOCASE"
@@ -141,6 +141,11 @@ pub fn get_songs_by_album(conn: &Connection, album: &str) -> Result<Vec<super::D
             server_song_id: row.get(12)?,
             stream_info: row.get(13)?,
             file_modified: row.get(14)?,
+            format: row.get(15)?,
+            bit_depth: row.get::<_, Option<u8>>(16)?,
+            sample_rate: row.get::<_, Option<u32>>(17)?,
+            bitrate: row.get::<_, Option<u32>>(18)?,
+            channels: row.get::<_, Option<u8>>(19)?,
         })
     })?.collect::<Result<Vec<_>>>()?;
 
@@ -153,7 +158,7 @@ pub fn get_songs_by_artist(conn: &Connection, artist: &str) -> Result<Vec<super:
     let mut stmt = conn.prepare(
         "SELECT id, title, artist, album, duration, file_path, file_size,
                 is_hr, is_sq, cover_hash, source_type, server_id, server_song_id,
-                stream_info, file_modified
+                stream_info, file_modified, format, bit_depth, sample_rate, bitrate, channels
          FROM songs
          WHERE artist = ?1
          ORDER BY album COLLATE NOCASE, title COLLATE NOCASE"
@@ -176,6 +181,11 @@ pub fn get_songs_by_artist(conn: &Connection, artist: &str) -> Result<Vec<super:
             server_song_id: row.get(12)?,
             stream_info: row.get(13)?,
             file_modified: row.get(14)?,
+            format: row.get(15)?,
+            bit_depth: row.get::<_, Option<u8>>(16)?,
+            sample_rate: row.get::<_, Option<u32>>(17)?,
+            bitrate: row.get::<_, Option<u32>>(18)?,
+            channels: row.get::<_, Option<u8>>(19)?,
         })
     })?.collect::<Result<Vec<_>>>()?;
 

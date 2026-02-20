@@ -188,10 +188,15 @@ pub fn db_migrate_from_localstorage(
             file_size: song.file_size.unwrap_or(0),
             is_hr: song.is_hr,
             is_sq: song.is_sq,
-            cover_hash: None, // Migration skips covers, rescan to get them
+            cover_hash: None,
             server_song_id: None,
             stream_info: if is_stream { Some(file_path) } else { None },
             file_modified: None,
+            format: None,
+            bit_depth: None,
+            sample_rate: None,
+            bitrate: None,
+            channels: None,
         };
 
         if is_stream {

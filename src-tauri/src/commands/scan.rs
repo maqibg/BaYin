@@ -204,6 +204,11 @@ pub async fn scan_local_to_db(
                         server_song_id: None,
                         stream_info: None,
                         file_modified: Some(song.file_modified),
+                        format: song.format,
+                        bit_depth: song.bit_depth,
+                        sample_rate: song.sample_rate,
+                        bitrate: song.bitrate,
+                        channels: song.channels,
                     })
                 }
                 Err(_) => {
@@ -467,6 +472,11 @@ pub async fn scan_stream_to_db(
                     }
                 }).to_string()),
                 file_modified: None,
+                format: s.format.clone(),
+                bit_depth: s.bit_depth,
+                sample_rate: s.sample_rate,
+                bitrate: s.bitrate,
+                channels: s.channels,
             })
             .collect();
 
