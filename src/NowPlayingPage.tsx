@@ -20,6 +20,8 @@ import "./NowPlayingPage.css";
 type PlayMode = "sequence" | "shuffle" | "repeat-one";
 type FontWeightOption = "Normal" | "Medium" | "Bold";
 type LyricAlign = "left" | "center" | "right";
+type LyricSourceMode = "local" | "online";
+type LyricProvider = "qq" | "kugou" | "netease";
 
 interface ParsedLrcLine {
   time: number;
@@ -55,6 +57,7 @@ export interface NowPlayingPageProps {
   volume: number;
   muted: boolean;
   parsedLyrics: ParsedLrcLine[];
+  currentLyricText: string;
   activeLyricIndex: number;
   lyricsLoading: boolean;
   lyricsError: string;
@@ -65,6 +68,9 @@ export interface NowPlayingPageProps {
   lyricSize: number;
   lyricCentered: boolean;
   fontWeight: FontWeightOption;
+  lyricSourceMode: LyricSourceMode;
+  currentLyricSourceText: string;
+  currentLyricProvider: LyricProvider | null;
   npAutoScrollLyrics: boolean;
   npDynamicBg: boolean;
   onClose: () => void;
@@ -78,6 +84,8 @@ export interface NowPlayingPageProps {
   onPlaySong: (id: string) => void;
   onRemoveFromQueue: (id: string) => void;
   onClearQueue: () => void;
+  onLyricSourceModeChange?: (mode: LyricSourceMode) => void;
+  onOpenLyricSourceDialog?: () => void;
   onReloadLyrics?: () => void;
   onLyricSizeChange?: (next: number) => void;
   onLyricCenteredChange?: (centered: boolean) => void;
@@ -243,6 +251,16 @@ const IcoNote = () => (
   </svg>
 );
 
+function resolveLyricProviderLabel(provider: LyricProvider): string {
+  if (provider === "qq") {
+    return "QQ";
+  }
+  if (provider === "kugou") {
+    return "酷狗";
+  }
+  return "网易云";
+}
+
 export default function NowPlayingPage({
   currentSong,
   currentSongCover,
@@ -254,6 +272,7 @@ export default function NowPlayingPage({
   volume,
   muted,
   parsedLyrics,
+  currentLyricText,
   activeLyricIndex,
   lyricsLoading,
   lyricsError,
@@ -264,6 +283,9 @@ export default function NowPlayingPage({
   lyricSize,
   lyricCentered,
   fontWeight,
+  lyricSourceMode,
+  currentLyricSourceText,
+  currentLyricProvider,
   npAutoScrollLyrics,
   npDynamicBg,
   onClose,
@@ -277,6 +299,8 @@ export default function NowPlayingPage({
   onPlaySong,
   onRemoveFromQueue,
   onClearQueue,
+  onLyricSourceModeChange,
+  onOpenLyricSourceDialog,
   onReloadLyrics,
   onLyricSizeChange,
   onLyricCenteredChange,
@@ -313,8 +337,10 @@ export default function NowPlayingPage({
   });
 
   const [lyricMenuPos, setLyricMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [lyricSourceMenuOpen, setLyricSourceMenuOpen] = useState(false);
 
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
+  const lyricSourceMenuRef = useRef<HTMLDivElement | null>(null);
   const lyricRefs = useRef<Map<number, HTMLElement>>(new Map());
   const userScrollRef = useRef(false);
   const cooldownRef = useRef<number | null>(null);
@@ -413,6 +439,11 @@ export default function NowPlayingPage({
         return;
       }
 
+      if (lyricSourceMenuOpen) {
+        setLyricSourceMenuOpen(false);
+        return;
+      }
+
       if (lyricMenuOpen) {
         setLyricMenuPos(null);
         return;
@@ -423,7 +454,7 @@ export default function NowPlayingPage({
 
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [lyricMenuOpen, onClose, showQueue]);
+  }, [lyricMenuOpen, lyricSourceMenuOpen, onClose, showQueue]);
 
   useEffect(() => {
     if (!lyricMenuOpen) {
@@ -442,6 +473,32 @@ export default function NowPlayingPage({
     };
   }, [lyricMenuOpen]);
 
+  useEffect(() => {
+    if (!lyricSourceMenuOpen) {
+      return;
+    }
+
+    const closeMenu = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (lyricSourceMenuRef.current && target && lyricSourceMenuRef.current.contains(target)) {
+        return;
+      }
+      setLyricSourceMenuOpen(false);
+    };
+
+    const closeMenuWithoutEvent = () => setLyricSourceMenuOpen(false);
+
+    window.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("resize", closeMenuWithoutEvent);
+    window.addEventListener("blur", closeMenuWithoutEvent);
+
+    return () => {
+      window.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("resize", closeMenuWithoutEvent);
+      window.removeEventListener("blur", closeMenuWithoutEvent);
+    };
+  }, [lyricSourceMenuOpen]);
+
   const getAlignText = (align: LyricAlign): "left" | "center" | "right" => align;
 
   const getAlignIcon = (align: LyricAlign) => {
@@ -458,6 +515,7 @@ export default function NowPlayingPage({
     setLyricAlign(align);
     localStorage.setItem("np_lyric_align", align);
     onLyricCenteredChange?.(align === "center");
+    setLyricSourceMenuOpen(false);
     setLyricMenuPos(null);
   };
 
@@ -470,6 +528,7 @@ export default function NowPlayingPage({
     const next: FontWeightOption = lyricFontWeight === "Bold" ? "Normal" : "Bold";
     setLyricFontWeight(next);
     onFontWeightChange?.(next);
+    setLyricSourceMenuOpen(false);
     setLyricMenuPos(null);
   };
 
@@ -481,16 +540,19 @@ export default function NowPlayingPage({
 
   const toggleTranslation = () => {
     setShowTranslation((previous) => !previous);
+    setLyricSourceMenuOpen(false);
     setLyricMenuPos(null);
   };
 
   const toggleNowPlayingInfo = () => {
     setShowNowPlayingInfo((previous) => !previous);
+    setLyricSourceMenuOpen(false);
     setLyricMenuPos(null);
   };
 
   const triggerReloadLyrics = () => {
     onReloadLyrics?.();
+    setLyricSourceMenuOpen(false);
     setLyricMenuPos(null);
   };
 
@@ -532,6 +594,18 @@ export default function NowPlayingPage({
     });
   };
 
+  const openLyricSourceDialog = () => {
+    onOpenLyricSourceDialog?.();
+    setLyricSourceMenuOpen(false);
+  };
+
+  const switchLyricSourceMode = (mode: LyricSourceMode) => {
+    onLyricSourceModeChange?.(mode);
+    setLyricSourceMenuOpen(false);
+  };
+
+  const currentProviderLabel = currentLyricProvider ? resolveLyricProviderLabel(currentLyricProvider) : "";
+
   const renderLyrics = () => {
     if (lyricsLoading) {
       return <div className="np-hint">正在加载歌词...</div>;
@@ -542,7 +616,43 @@ export default function NowPlayingPage({
     }
 
     if (!parsedLyrics.length) {
-      return <div className="np-hint">暂无歌词</div>;
+      if (!currentLyricText.trim()) {
+        return <div className="np-hint">暂无歌词</div>;
+      }
+
+      const rawLines = currentLyricText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      return (
+        <div
+          ref={lyricsContainerRef}
+          className={`np-lyrics np-lyrics-${lyricAlign} np-lyrics-raw`}
+          onScroll={handleLyricScroll}
+        >
+          {(rawLines.length ? rawLines : [currentLyricText.trim()]).map((line, index) => (
+            <div
+              key={`raw-${index}`}
+              className="np-lyric-line np-lyric-line-raw"
+              style={{
+                textAlign: getAlignText(lyricAlign),
+                padding: `${lineSpacing}px 12px`,
+              }}
+            >
+              <p
+                className="np-lyric-main np-lyric-main-raw"
+                style={{
+                  fontSize: `${lyricFontSize}px`,
+                  fontWeight: FW[lyricFontWeight],
+                }}
+              >
+                {line}
+              </p>
+            </div>
+          ))}
+        </div>
+      );
     }
 
     const translationSize = Math.max(14, lyricFontSize - 6);
@@ -634,17 +744,20 @@ export default function NowPlayingPage({
             <IcoDown />
           </button>
           <div className="np-tb-drag" data-tauri-drag-region aria-hidden="true" />
-          <button
-            className={`np-tb-btn${showQueue ? " np-tb-btn-active" : ""}`}
-            onClick={() => {
-              setLyricMenuPos(null);
-              setShowQueue((previous) => !previous);
-            }}
-            aria-label="播放队列"
-            data-no-drag="true"
-          >
-            <HamburgerMenuIcon width={18} height={18} />
-          </button>
+          <div className="np-tb-actions" data-no-drag="true">
+            <button
+              className={`np-tb-btn${showQueue ? " np-tb-btn-active" : ""}`}
+              onClick={() => {
+                setLyricMenuPos(null);
+                setLyricSourceMenuOpen(false);
+                setShowQueue((previous) => !previous);
+              }}
+              aria-label="播放队列"
+              data-no-drag="true"
+            >
+              <HamburgerMenuIcon width={18} height={18} />
+            </button>
+          </div>
         </div>
 
         <div className="np-body">
@@ -679,7 +792,45 @@ export default function NowPlayingPage({
 
             {renderLyrics()}
 
-            <div className={`np-lyric-controls${hoverLyricPanel || lyricMenuOpen ? " show" : ""}`} data-no-drag="true">
+            <div className={`np-lyric-controls${hoverLyricPanel || lyricMenuOpen || lyricSourceMenuOpen ? " show" : ""}`} data-no-drag="true">
+              <div className="np-source-wrap np-source-wrap-inline" ref={lyricSourceMenuRef}>
+                <button
+                  type="button"
+                  className={`np-lyric-ctl-btn${lyricSourceMenuOpen ? " active" : ""}`}
+                  onClick={() => {
+                    setLyricMenuPos(null);
+                    setLyricSourceMenuOpen((previous) => !previous);
+                  }}
+                  title={`歌词来源（当前：${currentLyricSourceText}）`}
+                  aria-label="歌词来源"
+                >
+                  <IcoNote />
+                </button>
+
+                {lyricSourceMenuOpen ? (
+                  <div className="np-source-menu np-source-menu-from-lyrics" onPointerDown={(event) => event.stopPropagation()}>
+                    <div className="np-source-menu-head">歌词来源 · {currentLyricSourceText}</div>
+                    <button type="button" className="np-source-menu-item" onClick={openLyricSourceDialog}>
+                      指定在线歌词
+                    </button>
+                    <button
+                      type="button"
+                      className={`np-source-menu-item ${lyricSourceMode === "online" ? "active" : ""}`}
+                      onClick={() => switchLyricSourceMode("online")}
+                    >
+                      在线{currentProviderLabel ? `（${currentProviderLabel}）` : ""}
+                    </button>
+                    <button
+                      type="button"
+                      className={`np-source-menu-item ${lyricSourceMode === "local" ? "active" : ""}`}
+                      onClick={() => switchLyricSourceMode("local")}
+                    >
+                      本地
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
               <button
                 type="button"
                 className="np-lyric-ctl-btn"

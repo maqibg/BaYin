@@ -40,6 +40,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 percent-encoding = "2.3"
+flate2 = "1"
+regex = "1"
 
 # 音频引擎
 symphonia = { version = "0.5", features = [

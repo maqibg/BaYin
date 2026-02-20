@@ -183,6 +183,42 @@ interface ParsedLrcLine {
   text: string;
 }
 
+type LyricProvider = "qq" | "kugou" | "netease";
+type LyricSourceMode = "local" | "online";
+
+interface OnlineLyricCandidate {
+  source: LyricProvider;
+  title: string;
+  artists: string;
+  album: string;
+  score: number;
+  durationMs?: number;
+  qqSongId?: number;
+  neteaseSongId?: string;
+  kugouSongHash?: string;
+  coverUrl?: string;
+}
+
+interface OnlineLyricFetchResult {
+  lyric: string;
+  format: string;
+  provider: LyricProvider;
+  raw?: string;
+}
+
+interface SongLyricBinding {
+  source: LyricProvider;
+  qqSongId?: number;
+  neteaseSongId?: string;
+  kugouSongHash?: string;
+  lyric?: string;
+  format?: string;
+  title?: string;
+  artists?: string;
+  album?: string;
+  updatedAt: number;
+}
+
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
@@ -464,7 +500,15 @@ const WEB_SAMPLE_SONGS: DbSong[] = [
 const UI_SETTINGS_KEY = "bayin.uiSettings";
 const PLAYLISTS_KEY = "bayin.playlists";
 const THEME_KEY = "bayin.theme";
+const LYRIC_BINDINGS_KEY = "bayin.lyricBindings";
 
+const DEFAULT_LYRIC_PROVIDER_ENABLED: Record<LyricProvider, boolean> = {
+  qq: true,
+  kugou: true,
+  netease: true,
+};
+
+const DEFAULT_LYRIC_PROVIDER_ORDER: LyricProvider[] = ["qq", "kugou", "netease"];
 
 
 function parseMessage(error: unknown): string {
@@ -527,6 +571,43 @@ function createDefaultStreamForm(serverType = "navidrome"): StreamServerInput {
     accessToken: "",
     userId: "",
   };
+}
+
+function resolveLyricProviderLabel(provider?: string | null): string {
+  if (provider === "qq") {
+    return "QQ";
+  }
+  if (provider === "kugou") {
+    return "酷狗";
+  }
+  if (provider === "netease") {
+    return "网易云";
+  }
+  return "未知来源";
+}
+
+function normalizeLyricProvider(value: string): LyricProvider | null {
+  if (value === "qq" || value === "kugou" || value === "netease") {
+    return value;
+  }
+  return null;
+}
+
+function createSongLyricBindingKey(song: DbSong): string {
+  return `${song.sourceType}:${song.serverId ?? "-"}:${song.serverSongId ?? song.id}`;
+}
+
+function createCandidateIdentity(candidate: OnlineLyricCandidate): string {
+  if (candidate.source === "qq" && candidate.qqSongId) {
+    return `qq:${candidate.qqSongId}`;
+  }
+  if (candidate.source === "kugou" && candidate.kugouSongHash) {
+    return `kugou:${candidate.kugouSongHash}`;
+  }
+  if (candidate.source === "netease" && candidate.neteaseSongId) {
+    return `netease:${candidate.neteaseSongId}`;
+  }
+  return `${candidate.source}:${candidate.title}:${candidate.artists}:${candidate.album}`;
 }
 
 function parseLrc(lyricText: string): ParsedLrcLine[] {
@@ -839,6 +920,24 @@ export default function App() {
   const [currentLyricText, setCurrentLyricText] = useState<string>("");
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsError, setLyricsError] = useState<string>("");
+  const [lyricSourceMode, setLyricSourceMode] = useState<LyricSourceMode>("local");
+  const [lyricProviderEnabled, setLyricProviderEnabled] = useState<Record<LyricProvider, boolean>>(DEFAULT_LYRIC_PROVIDER_ENABLED);
+  const [lyricProviderPreference, setLyricProviderPreference] = useState<LyricProvider[]>(DEFAULT_LYRIC_PROVIDER_ORDER);
+  const [lyricAutoPerSourceLimit, setLyricAutoPerSourceLimit] = useState(8);
+  const [lyricManualPerSourceLimit, setLyricManualPerSourceLimit] = useState(12);
+  const [currentLyricProvider, setCurrentLyricProvider] = useState<LyricProvider | null>(null);
+  const [currentLyricSourceText, setCurrentLyricSourceText] = useState<string>("本地歌词");
+  const [songLyricBindings, setSongLyricBindings] = useState<Record<string, SongLyricBinding>>({});
+
+  const [lyricSourceDialogOpen, setLyricSourceDialogOpen] = useState(false);
+  const [lyricSourceDialogKeyword, setLyricSourceDialogKeyword] = useState("");
+  const [lyricSourceDialogLoading, setLyricSourceDialogLoading] = useState(false);
+  const [lyricSourceDialogError, setLyricSourceDialogError] = useState("");
+  const [lyricSourceDialogResults, setLyricSourceDialogResults] = useState<OnlineLyricCandidate[]>([]);
+  const [lyricSourceDialogProvider, setLyricSourceDialogProvider] = useState<LyricProvider>("qq");
+  const [lyricSourceDialogPreviewKey, setLyricSourceDialogPreviewKey] = useState<string | null>(null);
+  const [lyricSourceDialogPreviewText, setLyricSourceDialogPreviewText] = useState("");
+  const [lyricSourceDialogApplyingKey, setLyricSourceDialogApplyingKey] = useState<string | null>(null);
 
   // 全屏播放页
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
@@ -855,6 +954,8 @@ export default function App() {
   );
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lyricRequestVersionRef = useRef(0);
+  const lyricPreviewRequestVersionRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const songRowElementMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const songsAlphabetRailRef = useRef<HTMLDivElement | null>(null);
@@ -1044,6 +1145,11 @@ export default function App() {
       showCover?: boolean;
       volume?: number;
       muted?: boolean;
+      lyricSourceMode?: LyricSourceMode;
+      lyricProviderEnabled?: Partial<Record<LyricProvider, boolean>>;
+      lyricProviderPreference?: LyricProvider[];
+      lyricAutoPerSourceLimit?: number;
+      lyricManualPerSourceLimit?: number;
     }>(rawUiSettings);
 
     if (parsedUiSettings) {
@@ -1068,6 +1174,33 @@ export default function App() {
       if (typeof parsedUiSettings.muted === "boolean") {
         setMuted(parsedUiSettings.muted);
       }
+      if (parsedUiSettings.lyricSourceMode === "local" || parsedUiSettings.lyricSourceMode === "online") {
+        setLyricSourceMode(parsedUiSettings.lyricSourceMode);
+      }
+      if (parsedUiSettings.lyricProviderEnabled) {
+        setLyricProviderEnabled({
+          qq: parsedUiSettings.lyricProviderEnabled.qq !== false,
+          kugou: parsedUiSettings.lyricProviderEnabled.kugou !== false,
+          netease: parsedUiSettings.lyricProviderEnabled.netease !== false,
+        });
+      }
+      if (Array.isArray(parsedUiSettings.lyricProviderPreference)) {
+        const normalized = parsedUiSettings.lyricProviderPreference
+          .map((item) => normalizeLyricProvider(item))
+          .filter((item): item is LyricProvider => Boolean(item));
+        if (normalized.length) {
+          const next = [
+            ...new Set<LyricProvider>([...normalized, ...DEFAULT_LYRIC_PROVIDER_ORDER]),
+          ];
+          setLyricProviderPreference(next);
+        }
+      }
+      if (typeof parsedUiSettings.lyricAutoPerSourceLimit === "number") {
+        setLyricAutoPerSourceLimit(Math.max(1, Math.min(20, Math.round(parsedUiSettings.lyricAutoPerSourceLimit))));
+      }
+      if (typeof parsedUiSettings.lyricManualPerSourceLimit === "number") {
+        setLyricManualPerSourceLimit(Math.max(1, Math.min(30, Math.round(parsedUiSettings.lyricManualPerSourceLimit))));
+      }
     }
 
     const rawPlaylists = localStorage.getItem(PLAYLISTS_KEY);
@@ -1081,6 +1214,26 @@ export default function App() {
 
       setPlaylists(nextPlaylists);
       setSelectedPlaylistId(nextPlaylists[0]?.id ?? null);
+    }
+
+    const rawBindings = localStorage.getItem(LYRIC_BINDINGS_KEY);
+    const parsedBindings = safeParseJson<Record<string, SongLyricBinding>>(rawBindings);
+    if (parsedBindings && typeof parsedBindings === "object") {
+      const nextBindings: Record<string, SongLyricBinding> = {};
+      for (const [key, value] of Object.entries(parsedBindings)) {
+        if (!value || typeof value !== "object") {
+          continue;
+        }
+        if (!value.source || !normalizeLyricProvider(value.source)) {
+          continue;
+        }
+        nextBindings[key] = {
+          ...value,
+          source: value.source,
+          updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : Date.now(),
+        };
+      }
+      setSongLyricBindings(nextBindings);
     }
   }, []);
 
@@ -1100,9 +1253,31 @@ export default function App() {
         showCover,
         volume,
         muted,
+        lyricSourceMode,
+        lyricProviderEnabled,
+        lyricProviderPreference,
+        lyricAutoPerSourceLimit,
+        lyricManualPerSourceLimit,
       }),
     );
-  }, [fontWeight, language, lyricCentered, lyricSize, muted, showCover, volume]);
+  }, [
+    fontWeight,
+    language,
+    lyricAutoPerSourceLimit,
+    lyricCentered,
+    lyricManualPerSourceLimit,
+    lyricProviderEnabled,
+    lyricProviderPreference,
+    lyricSize,
+    lyricSourceMode,
+    muted,
+    showCover,
+    volume,
+  ]);
+
+  useEffect(() => {
+    localStorage.setItem(LYRIC_BINDINGS_KEY, JSON.stringify(songLyricBindings));
+  }, [songLyricBindings]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -1833,6 +2008,25 @@ export default function App() {
     [currentSongId, queueSongs],
   );
 
+  const enabledLyricProviders = useMemo(() => {
+    const sorted = lyricProviderPreference.filter((provider) => lyricProviderEnabled[provider]);
+    if (sorted.length) {
+      return sorted;
+    }
+    return DEFAULT_LYRIC_PROVIDER_ORDER.filter((provider) => lyricProviderEnabled[provider]);
+  }, [lyricProviderEnabled, lyricProviderPreference]);
+
+  const lyricSourceDialogProviderCounts = useMemo(() => ({
+    qq: lyricSourceDialogResults.filter((candidate) => candidate.source === "qq").length,
+    kugou: lyricSourceDialogResults.filter((candidate) => candidate.source === "kugou").length,
+    netease: lyricSourceDialogResults.filter((candidate) => candidate.source === "netease").length,
+  }), [lyricSourceDialogResults]);
+
+  const lyricSourceDialogFilteredResults = useMemo(
+    () => lyricSourceDialogResults.filter((candidate) => candidate.source === lyricSourceDialogProvider),
+    [lyricSourceDialogProvider, lyricSourceDialogResults],
+  );
+
   const parsedLyrics = useMemo(() => parseLrc(currentLyricText), [currentLyricText]);
 
   const activeLyricIndex = useMemo(() => {
@@ -1958,60 +2152,508 @@ export default function App() {
     [streamServers],
   );
 
-  const fetchLyricsForSong = useCallback(
+  const updateSongLyricBinding = useCallback((song: DbSong, binding: SongLyricBinding) => {
+    const bindingKey = createSongLyricBindingKey(song);
+    setSongLyricBindings((previous) => ({
+      ...previous,
+      [bindingKey]: binding,
+    }));
+  }, []);
+
+  const getEnabledLyricProviders = useCallback((): LyricProvider[] => {
+    const preferred = enabledLyricProviders.length
+      ? enabledLyricProviders
+      : DEFAULT_LYRIC_PROVIDER_ORDER.filter((provider) => lyricProviderEnabled[provider]);
+
+    if (!preferred.length) {
+      return DEFAULT_LYRIC_PROVIDER_ORDER;
+    }
+
+    return preferred;
+  }, [enabledLyricProviders, lyricProviderEnabled]);
+
+  const searchOnlineLyricCandidates = useCallback(
+    async (song: DbSong, keyword?: string, limitPerSource?: number) => {
+      const providers = getEnabledLyricProviders();
+      if (!providers.length) {
+        return [] as OnlineLyricCandidate[];
+      }
+
+      const result = await invoke<OnlineLyricCandidate[]>("search_online_lyrics", {
+        request: {
+          title: song.title,
+          artist: song.artist,
+          album: song.album,
+          duration: song.duration,
+          keyword: keyword?.trim() ? keyword.trim() : undefined,
+          providers,
+          limitPerSource: limitPerSource ?? lyricAutoPerSourceLimit,
+        },
+      });
+
+      if (!Array.isArray(result)) {
+        return [] as OnlineLyricCandidate[];
+      }
+
+      return result
+        .map((candidate) => {
+          const normalized = normalizeLyricProvider(candidate.source);
+          if (!normalized) {
+            return null;
+          }
+          return {
+            ...candidate,
+            source: normalized,
+          } as OnlineLyricCandidate;
+        })
+        .filter((candidate): candidate is OnlineLyricCandidate => Boolean(candidate));
+    },
+    [getEnabledLyricProviders, lyricAutoPerSourceLimit],
+  );
+
+  const fetchOnlineLyricByCandidate = useCallback(async (candidate: OnlineLyricCandidate) => {
+    const result = await invoke<OnlineLyricFetchResult | null>("fetch_online_lyric", {
+      request: {
+        source: candidate.source,
+        qqSongId: candidate.qqSongId,
+        neteaseSongId: candidate.neteaseSongId,
+        kugouSongHash: candidate.kugouSongHash,
+      },
+    });
+
+    if (!result) {
+      return null;
+    }
+
+    const provider = normalizeLyricProvider(result.provider);
+    if (!provider) {
+      return null;
+    }
+
+    return {
+      ...result,
+      provider,
+    } as OnlineLyricFetchResult;
+  }, []);
+
+  const loadNativeLyrics = useCallback(
+    async (song: DbSong): Promise<{ text: string; sourceLabel: string } | null> => {
+      if (song.sourceType === "stream") {
+        const payload = safeParseJson<StreamInfoPayload>(song.streamInfo);
+        const config = findServerBySong(song);
+        const songId = payload?.songId || song.serverSongId || song.id;
+
+        if (!config || !songId) {
+          throw new Error("缺少流媒体配置，无法获取歌词");
+        }
+
+        const result = await invoke<string | null>("get_stream_lyrics", {
+          config,
+          songId,
+        });
+
+        if (result && result.trim()) {
+          return {
+            text: result,
+            sourceLabel: "流媒体歌词",
+          };
+        }
+
+        return null;
+      }
+
+      if (!song.filePath) {
+        throw new Error("当前歌曲无可用文件路径");
+      }
+
+      const lyric = await invoke<string | null>("get_lyrics", { filePath: song.filePath });
+      if (lyric && lyric.trim()) {
+        return {
+          text: lyric,
+          sourceLabel: "本地歌词",
+        };
+      }
+
+      return null;
+    },
+    [findServerBySong],
+  );
+
+  const tryLoadOnlineLyrics = useCallback(
     async (song: DbSong) => {
+      const providers = getEnabledLyricProviders();
+      const bindingKey = createSongLyricBindingKey(song);
+      const binding = songLyricBindings[bindingKey];
+
+      if (binding && providers.includes(binding.source)) {
+        if (binding.lyric && binding.lyric.trim()) {
+          return {
+            text: binding.lyric,
+            provider: binding.source,
+          };
+        }
+
+        const fallbackCandidate: OnlineLyricCandidate = {
+          source: binding.source,
+          title: binding.title ?? song.title,
+          artists: binding.artists ?? song.artist,
+          album: binding.album ?? song.album,
+          score: 0,
+          qqSongId: binding.qqSongId,
+          neteaseSongId: binding.neteaseSongId,
+          kugouSongHash: binding.kugouSongHash,
+        };
+
+        const fetched = await fetchOnlineLyricByCandidate(fallbackCandidate);
+        if (fetched && fetched.lyric.trim()) {
+          updateSongLyricBinding(song, {
+            ...binding,
+            lyric: fetched.lyric,
+            format: fetched.format,
+            updatedAt: Date.now(),
+          });
+
+          return {
+            text: fetched.lyric,
+            provider: fetched.provider,
+          };
+        }
+      }
+
+      const candidates = await searchOnlineLyricCandidates(song, undefined, lyricAutoPerSourceLimit);
+      if (!candidates.length) {
+        return null;
+      }
+
+      const providerRank = new Map<LyricProvider, number>();
+      providers.forEach((provider, index) => providerRank.set(provider, index));
+
+      const perProviderCount: Record<LyricProvider, number> = {
+        qq: 0,
+        kugou: 0,
+        netease: 0,
+      };
+
+      const sortedCandidates = candidates
+        .filter((candidate) => providers.includes(candidate.source))
+        .sort((left, right) => {
+          const leftRank = providerRank.get(left.source) ?? 999;
+          const rightRank = providerRank.get(right.source) ?? 999;
+          if (leftRank !== rightRank) {
+            return leftRank - rightRank;
+          }
+          return right.score - left.score;
+        });
+
+      for (const candidate of sortedCandidates) {
+        if (perProviderCount[candidate.source] >= lyricAutoPerSourceLimit) {
+          continue;
+        }
+
+        perProviderCount[candidate.source] += 1;
+
+        const fetched = await fetchOnlineLyricByCandidate(candidate);
+        if (!fetched || !fetched.lyric.trim()) {
+          continue;
+        }
+
+        updateSongLyricBinding(song, {
+          source: candidate.source,
+          qqSongId: candidate.qqSongId,
+          neteaseSongId: candidate.neteaseSongId,
+          kugouSongHash: candidate.kugouSongHash,
+          lyric: fetched.lyric,
+          format: fetched.format,
+          title: candidate.title,
+          artists: candidate.artists,
+          album: candidate.album,
+          updatedAt: Date.now(),
+        });
+
+        return {
+          text: fetched.lyric,
+          provider: fetched.provider,
+        };
+      }
+
+      return null;
+    },
+    [
+      fetchOnlineLyricByCandidate,
+      getEnabledLyricProviders,
+      lyricAutoPerSourceLimit,
+      searchOnlineLyricCandidates,
+      songLyricBindings,
+      updateSongLyricBinding,
+    ],
+  );
+
+  const fetchLyricsForSong = useCallback(
+    async (song: DbSong, modeOverride?: LyricSourceMode) => {
       if (!isTauriEnv) {
         setCurrentLyricText("");
         setLyricsError("");
+        setCurrentLyricProvider(null);
+        setCurrentLyricSourceText("本地歌词");
         return;
       }
+
+      const requestVersion = ++lyricRequestVersionRef.current;
+      const isStale = () => requestVersion !== lyricRequestVersionRef.current;
 
       setLyricsLoading(true);
       setLyricsError("");
 
-      try {
-        if (song.sourceType === "stream") {
-          const payload = safeParseJson<StreamInfoPayload>(song.streamInfo);
-          const config = findServerBySong(song);
-          const songId = payload?.songId || song.serverSongId || song.id;
+      const activeMode = modeOverride ?? lyricSourceMode;
+      let failureReason = "";
 
-          if (config && songId) {
-            const result = await invoke<string | null>("get_stream_lyrics", {
-              config,
-              songId,
-            });
+      const applyResult = (text: string, sourceText: string, provider: LyricProvider | null) => {
+        if (isStale()) {
+          return;
+        }
+        setCurrentLyricText(text);
+        setCurrentLyricSourceText(sourceText);
+        setCurrentLyricProvider(provider);
+      };
 
-            if (result && result.trim()) {
-              setCurrentLyricText(result);
-            } else {
-              setCurrentLyricText("");
-              setLyricsError("暂无歌词");
-            }
-          } else {
-            setCurrentLyricText("");
-            setLyricsError("缺少流媒体配置，无法获取歌词");
+      const tryLoadLocal = async () => {
+        try {
+          const localLyric = await loadNativeLyrics(song);
+          if (isStale()) {
+            return false;
           }
-        } else if (song.filePath) {
-          const lyric = await invoke<string | null>("get_lyrics", { filePath: song.filePath });
-          if (lyric && lyric.trim()) {
-            setCurrentLyricText(lyric);
-          } else {
-            setCurrentLyricText("");
-            setLyricsError("暂无歌词");
+          if (!localLyric || !localLyric.text.trim()) {
+            return false;
+          }
+
+          applyResult(localLyric.text, localLyric.sourceLabel, null);
+          return true;
+        } catch (error) {
+          failureReason = parseMessage(error);
+          return false;
+        }
+      };
+
+      const tryLoadOnline = async () => {
+        try {
+          const onlineLyric = await tryLoadOnlineLyrics(song);
+          if (isStale()) {
+            return false;
+          }
+          if (!onlineLyric || !onlineLyric.text.trim()) {
+            return false;
+          }
+
+          applyResult(
+            onlineLyric.text,
+            `在线歌词（${resolveLyricProviderLabel(onlineLyric.provider)}）`,
+            onlineLyric.provider,
+          );
+          return true;
+        } catch (error) {
+          failureReason = parseMessage(error);
+          return false;
+        }
+      };
+
+      try {
+        let loaded = false;
+
+        if (activeMode === "online") {
+          loaded = await tryLoadOnline();
+          if (!loaded) {
+            loaded = await tryLoadLocal();
           }
         } else {
-          setCurrentLyricText("");
-          setLyricsError("当前歌曲无可用文件路径");
+          loaded = await tryLoadLocal();
+          if (!loaded) {
+            loaded = await tryLoadOnline();
+          }
         }
-      } catch (error) {
-        setCurrentLyricText("");
-        setLyricsError(`歌词加载失败：${parseMessage(error)}`);
+
+        if (!loaded && !isStale()) {
+          setCurrentLyricText("");
+          setCurrentLyricProvider(null);
+          setCurrentLyricSourceText(activeMode === "online" ? "在线歌词" : "本地歌词");
+          setLyricsError(failureReason ? `歌词加载失败：${failureReason}` : "暂无歌词");
+        }
       } finally {
-        setLyricsLoading(false);
+        if (!isStale()) {
+          setLyricsLoading(false);
+        }
       }
     },
-    [findServerBySong, isTauriEnv],
+    [isTauriEnv, loadNativeLyrics, lyricSourceMode, tryLoadOnlineLyrics],
   );
+
+  const setLyricSourceModeAndReload = useCallback((nextMode: LyricSourceMode) => {
+    setLyricSourceMode(nextMode);
+    if (currentSong) {
+      void fetchLyricsForSong(currentSong, nextMode);
+    }
+  }, [currentSong, fetchLyricsForSong]);
+
+  const searchLyricSourceDialogCandidates = useCallback(
+    async (keyword?: string) => {
+      if (!currentSong || !isTauriEnv) {
+        return;
+      }
+
+      const providers = getEnabledLyricProviders();
+      if (!providers.length) {
+        setLyricSourceDialogResults([]);
+        setLyricSourceDialogError("请先启用至少一个在线歌词来源");
+        return;
+      }
+
+      setLyricSourceDialogLoading(true);
+      setLyricSourceDialogError("");
+      lyricPreviewRequestVersionRef.current += 1;
+      setLyricSourceDialogPreviewKey(null);
+      setLyricSourceDialogPreviewText("");
+
+      try {
+        const result = await invoke<OnlineLyricCandidate[]>("search_online_lyrics", {
+          request: {
+            title: currentSong.title,
+            artist: currentSong.artist,
+            album: currentSong.album,
+            duration: currentSong.duration,
+            keyword: keyword?.trim() ? keyword.trim() : undefined,
+            providers,
+            limitPerSource: lyricManualPerSourceLimit,
+          },
+        });
+
+        const normalized = Array.isArray(result)
+          ? result
+            .map((candidate) => {
+              const source = normalizeLyricProvider(candidate.source);
+              if (!source) {
+                return null;
+              }
+              return { ...candidate, source } as OnlineLyricCandidate;
+            })
+            .filter((candidate): candidate is OnlineLyricCandidate => Boolean(candidate))
+          : [];
+
+        setLyricSourceDialogResults(normalized);
+
+        if (!normalized.length) {
+          setLyricSourceDialogError("没有找到匹配的在线歌词");
+        } else {
+          const firstProvider = providers.find((provider) => normalized.some((candidate) => candidate.source === provider));
+          if (firstProvider) {
+            setLyricSourceDialogProvider(firstProvider);
+          }
+        }
+      } catch (error) {
+        setLyricSourceDialogResults([]);
+        setLyricSourceDialogError(`在线歌词搜索失败：${parseMessage(error)}`);
+      } finally {
+        setLyricSourceDialogLoading(false);
+      }
+    },
+    [currentSong, getEnabledLyricProviders, isTauriEnv, lyricManualPerSourceLimit],
+  );
+
+  const openLyricSourceDialog = useCallback(() => {
+    if (!currentSong) {
+      return;
+    }
+
+    const keyword = `${currentSong.title} ${currentSong.artist}`.trim();
+    setLyricSourceDialogKeyword(keyword);
+    setLyricSourceDialogOpen(true);
+    void searchLyricSourceDialogCandidates(keyword);
+  }, [currentSong, searchLyricSourceDialogCandidates]);
+
+  const closeLyricSourceDialog = useCallback(() => {
+    setLyricSourceDialogOpen(false);
+    setLyricSourceDialogError("");
+    lyricPreviewRequestVersionRef.current += 1;
+    setLyricSourceDialogPreviewKey(null);
+    setLyricSourceDialogPreviewText("");
+    setLyricSourceDialogApplyingKey(null);
+  }, []);
+
+  const previewLyricSourceCandidate = useCallback(async (candidate: OnlineLyricCandidate) => {
+    const candidateKey = createCandidateIdentity(candidate);
+
+    if (lyricSourceDialogPreviewKey === candidateKey) {
+      lyricPreviewRequestVersionRef.current += 1;
+      setLyricSourceDialogPreviewKey(null);
+      setLyricSourceDialogPreviewText("");
+      return;
+    }
+
+    const requestVersion = ++lyricPreviewRequestVersionRef.current;
+    setLyricSourceDialogPreviewKey(candidateKey);
+    setLyricSourceDialogPreviewText("");
+
+    try {
+      const fetched = await fetchOnlineLyricByCandidate(candidate);
+      if (requestVersion !== lyricPreviewRequestVersionRef.current) {
+        return;
+      }
+
+      if (fetched?.lyric?.trim()) {
+        setLyricSourceDialogPreviewText(fetched.lyric);
+      } else {
+        setLyricSourceDialogPreviewText("预览失败：该来源未返回歌词");
+      }
+    } catch (error) {
+      if (requestVersion !== lyricPreviewRequestVersionRef.current) {
+        return;
+      }
+      setLyricSourceDialogPreviewText(`预览失败：${parseMessage(error)}`);
+    }
+  }, [fetchOnlineLyricByCandidate, lyricSourceDialogPreviewKey]);
+
+  const applyLyricSourceCandidate = useCallback(async (candidate: OnlineLyricCandidate) => {
+    if (!currentSong) {
+      return;
+    }
+
+    const candidateKey = createCandidateIdentity(candidate);
+    setLyricSourceDialogApplyingKey(candidateKey);
+    setLyricSourceDialogError("");
+
+    try {
+      const fetched = await fetchOnlineLyricByCandidate(candidate);
+      if (!fetched || !fetched.lyric.trim()) {
+        setLyricSourceDialogError("应用失败：该来源未返回歌词");
+        return;
+      }
+
+      lyricRequestVersionRef.current += 1;
+      setLyricsLoading(false);
+      setCurrentLyricText(fetched.lyric);
+      setLyricsError("");
+      setCurrentLyricProvider(fetched.provider);
+      setCurrentLyricSourceText(`在线歌词（${resolveLyricProviderLabel(fetched.provider)}）`);
+      setLyricSourceMode("online");
+
+      updateSongLyricBinding(currentSong, {
+        source: candidate.source,
+        qqSongId: candidate.qqSongId,
+        neteaseSongId: candidate.neteaseSongId,
+        kugouSongHash: candidate.kugouSongHash,
+        lyric: fetched.lyric,
+        format: fetched.format,
+        title: candidate.title,
+        artists: candidate.artists,
+        album: candidate.album,
+        updatedAt: Date.now(),
+      });
+
+      setLyricSourceDialogOpen(false);
+    } catch (error) {
+      setLyricSourceDialogError(`应用失败：${parseMessage(error)}`);
+    } finally {
+      setLyricSourceDialogApplyingKey(null);
+    }
+  }, [currentSong, fetchOnlineLyricByCandidate, updateSongLyricBinding]);
 
   const resolveSongSrc = useCallback(
     async (song: DbSong) => {
@@ -4027,6 +4669,84 @@ export default function App() {
       </article>
 
       <article className="settings-card padded">
+        <p className="block-title">在线歌词</p>
+
+        <p className="sub-title ui-sub-title">默认来源</p>
+        <div className="segment two">
+          {[
+            { value: "local", label: "本地优先" },
+            { value: "online", label: "在线优先" },
+          ].map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={lyricSourceMode === item.value ? "active" : ""}
+              onClick={() => setLyricSourceModeAndReload(item.value as LyricSourceMode)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="setting-line with-gap setting-line-divider">
+          <span>QQ 音乐</span>
+          <button
+            type="button"
+            className={`switch ${lyricProviderEnabled.qq ? "on" : ""}`}
+            onClick={() => setLyricProviderEnabled((previous) => ({ ...previous, qq: !previous.qq }))}
+          >
+            <span />
+          </button>
+        </div>
+
+        <div className="setting-line with-gap setting-line-divider">
+          <span>酷狗音乐</span>
+          <button
+            type="button"
+            className={`switch ${lyricProviderEnabled.kugou ? "on" : ""}`}
+            onClick={() => setLyricProviderEnabled((previous) => ({ ...previous, kugou: !previous.kugou }))}
+          >
+            <span />
+          </button>
+        </div>
+
+        <div className="setting-line with-gap setting-line-divider">
+          <span>网易云</span>
+          <button
+            type="button"
+            className={`switch ${lyricProviderEnabled.netease ? "on" : ""}`}
+            onClick={() => setLyricProviderEnabled((previous) => ({ ...previous, netease: !previous.netease }))}
+          >
+            <span />
+          </button>
+        </div>
+
+        <div className="setting-line">
+          <span>自动匹配每源上限</span>
+          <span>{lyricAutoPerSourceLimit}</span>
+        </div>
+        <input
+          type="range"
+          min={1}
+          max={20}
+          value={lyricAutoPerSourceLimit}
+          onChange={(event) => setLyricAutoPerSourceLimit(Number(event.target.value))}
+        />
+
+        <div className="setting-line">
+          <span>手动搜索每源上限</span>
+          <span>{lyricManualPerSourceLimit}</span>
+        </div>
+        <input
+          type="range"
+          min={1}
+          max={30}
+          value={lyricManualPerSourceLimit}
+          onChange={(event) => setLyricManualPerSourceLimit(Number(event.target.value))}
+        />
+      </article>
+
+      <article className="settings-card padded">
         <p className="block-title">列表</p>
         <div className="setting-line">
           <span>显示封面</span>
@@ -4491,6 +5211,7 @@ export default function App() {
           volume={volume}
           muted={muted}
           parsedLyrics={parsedLyrics}
+          currentLyricText={currentLyricText}
           activeLyricIndex={activeLyricIndex}
           lyricsLoading={lyricsLoading}
           lyricsError={lyricsError}
@@ -4500,6 +5221,9 @@ export default function App() {
           lyricSize={lyricSize}
           lyricCentered={lyricCentered}
           fontWeight={fontWeight}
+          lyricSourceMode={lyricSourceMode}
+          currentLyricSourceText={currentLyricSourceText}
+          currentLyricProvider={currentLyricProvider}
           npAutoScrollLyrics={npAutoScrollLyrics}
           npDynamicBg={npDynamicBg}
           coverMap={coverMap}
@@ -4514,6 +5238,8 @@ export default function App() {
           onPlaySong={(id) => void playSongById(id, true)}
           onRemoveFromQueue={removeFromQueue}
           onClearQueue={clearQueue}
+          onLyricSourceModeChange={setLyricSourceModeAndReload}
+          onOpenLyricSourceDialog={openLyricSourceDialog}
           onReloadLyrics={() => {
             if (currentSong) {
               void fetchLyricsForSong(currentSong);
@@ -4586,6 +5312,120 @@ export default function App() {
             ) : null}
           </div>
         </section>
+      ) : null}
+
+      {lyricSourceDialogOpen ? (
+        <div className="overlay overlay-lyric-source" data-no-drag="true" onClick={closeLyricSourceDialog}>
+          <section className="lyric-source-dialog" data-no-drag="true" onClick={(event) => event.stopPropagation()}>
+            <div className="lyric-source-dialog-head">
+              <h3>指定在线歌词</h3>
+              <button type="button" className="icon-btn subtle" onClick={closeLyricSourceDialog}>×</button>
+            </div>
+
+            <div className="lyric-source-search">
+              <input
+                type="text"
+                value={lyricSourceDialogKeyword}
+                onChange={(event) => setLyricSourceDialogKeyword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void searchLyricSourceDialogCandidates(lyricSourceDialogKeyword);
+                  }
+                }}
+                placeholder="输入歌曲名或 歌曲名 + 歌手"
+              />
+              <button
+                type="button"
+                className="primary-btn lyric-source-search-btn"
+                onClick={() => {
+                  void searchLyricSourceDialogCandidates(lyricSourceDialogKeyword);
+                }}
+                disabled={lyricSourceDialogLoading}
+              >
+                {lyricSourceDialogLoading ? "搜索中..." : "搜索"}
+              </button>
+            </div>
+
+            <div className="lyric-source-tabs">
+              {(DEFAULT_LYRIC_PROVIDER_ORDER).map((provider) => (
+                <button
+                  key={provider}
+                  type="button"
+                  className={`lyric-source-tab ${lyricSourceDialogProvider === provider ? "active" : ""}`}
+                  onClick={() => setLyricSourceDialogProvider(provider)}
+                >
+                  {resolveLyricProviderLabel(provider)}
+                  <span>{lyricSourceDialogProviderCounts[provider]}</span>
+                </button>
+              ))}
+            </div>
+
+            {lyricSourceDialogError ? <p className="lyric-source-error">{lyricSourceDialogError}</p> : null}
+
+            <div className="lyric-source-list">
+              {lyricSourceDialogLoading ? (
+                <p className="lyric-source-empty">正在搜索在线歌词...</p>
+              ) : lyricSourceDialogFilteredResults.length ? (
+                lyricSourceDialogFilteredResults.map((candidate) => {
+                  const candidateKey = createCandidateIdentity(candidate);
+                  const isPreviewing = lyricSourceDialogPreviewKey === candidateKey;
+                  const isApplying = lyricSourceDialogApplyingKey === candidateKey;
+
+                  return (
+                    <article key={candidateKey} className="lyric-source-item">
+                      <button
+                        type="button"
+                        className="lyric-source-item-main"
+                        onClick={() => {
+                          void applyLyricSourceCandidate(candidate);
+                        }}
+                        disabled={Boolean(lyricSourceDialogApplyingKey) && !isApplying}
+                      >
+                        <strong>{candidate.title}</strong>
+                        <small>{candidate.artists}{candidate.album ? ` · ${candidate.album}` : ""}</small>
+                        <span className="lyric-source-item-meta">
+                          {resolveLyricProviderLabel(candidate.source)}
+                          {typeof candidate.durationMs === "number" ? ` · ${formatTime(candidate.durationMs / 1000)}` : ""}
+                        </span>
+                      </button>
+
+                      <div className="lyric-source-item-actions">
+                        <button
+                          type="button"
+                          className="ghost-btn lyric-source-preview-btn"
+                          onClick={() => {
+                            void previewLyricSourceCandidate(candidate);
+                          }}
+                        >
+                          {isPreviewing ? "收起预览" : "预览"}
+                        </button>
+                        <button
+                          type="button"
+                          className="primary-btn lyric-source-apply-btn"
+                          onClick={() => {
+                            void applyLyricSourceCandidate(candidate);
+                          }}
+                          disabled={Boolean(lyricSourceDialogApplyingKey) && !isApplying}
+                        >
+                          {isApplying ? "应用中..." : "使用"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <p className="lyric-source-empty">暂无搜索结果</p>
+              )}
+            </div>
+
+            {lyricSourceDialogPreviewText ? (
+              <div className="lyric-source-preview">
+                <p>歌词预览</p>
+                <pre>{lyricSourceDialogPreviewText}</pre>
+              </div>
+            ) : null}
+          </section>
+        </div>
       ) : null}
 
       {songsSortDialogOpen ? (

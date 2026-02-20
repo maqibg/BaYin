@@ -24,6 +24,8 @@ use commands::{
     audio_play, audio_pause, audio_resume, audio_stop, audio_seek,
     audio_set_volume, audio_set_eq_bands, audio_set_eq_enabled,
     audio_enable_visualization, audio_get_state,
+    // 在线歌词命令
+    search_online_lyrics, fetch_online_lyric,
 };
 use db::DbState;
 use utils::cover::CoverCache;
@@ -76,6 +78,8 @@ pub fn run() {
             scan_music_files,
             get_music_metadata,
             get_lyrics,
+            search_online_lyrics,
+            fetch_online_lyric,
             list_directories,
             // 统一流媒体命令
             test_stream_connection,

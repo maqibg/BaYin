@@ -1773,6 +1773,10 @@ button {
   justify-content: center;
 }
 
+.overlay.overlay-lyric-source {
+  z-index: 260;
+}
+
 .dialog,
 .menu {
   width: min(360px, calc(100% - 32px));
@@ -3836,3 +3840,262 @@ button {
 
 
 
+
+.lyric-source-dialog {
+  width: min(900px, calc(100% - 32px));
+  max-height: min(82vh, 860px);
+  border-radius: 16px;
+  background: #fdfdfd;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.24);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lyric-source-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lyric-source-dialog-head h3 {
+  margin: 0;
+  font-size: 24px;
+  color: #1d2837;
+}
+
+.lyric-source-search {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.lyric-source-search input {
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid #d8e0eb;
+  background: #ffffff;
+  color: #1f2c3d;
+  font-size: 15px;
+  padding: 0 12px;
+}
+
+.lyric-source-search-btn {
+  min-width: 92px;
+  height: 42px;
+}
+
+.lyric-source-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyric-source-tab {
+  border: 1px solid #d5deea;
+  background: #f7f9fc;
+  color: #50607a;
+  border-radius: 999px;
+  padding: 5px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.lyric-source-tab span {
+  color: #7c8da6;
+  font-size: 12px;
+}
+
+.lyric-source-tab.active {
+  border-color: #9cbdfb;
+  color: #295eb8;
+  background: #eaf2ff;
+}
+
+.lyric-source-error {
+  margin: 0;
+  color: #c53333;
+  font-size: 13px;
+}
+
+.lyric-source-list {
+  min-height: 220px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid #e3eaf3;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lyric-source-empty {
+  margin: 0;
+  padding: 36px 10px;
+  text-align: center;
+  color: #7c8ea8;
+  font-size: 14px;
+}
+
+.lyric-source-item {
+  border: 1px solid #e2e8f2;
+  border-radius: 10px;
+  background: #fdfefe;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+}
+
+.lyric-source-item-main {
+  border: none;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lyric-source-item-main strong,
+.lyric-source-item-main small,
+.lyric-source-item-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyric-source-item-main strong {
+  color: #223146;
+  font-size: 14px;
+}
+
+.lyric-source-item-main small {
+  color: #5f708a;
+  font-size: 12px;
+}
+
+.lyric-source-item-meta {
+  color: #8294b0;
+  font-size: 11px;
+}
+
+.lyric-source-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lyric-source-preview-btn,
+.lyric-source-apply-btn {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.lyric-source-preview {
+  border: 1px solid #e2e9f4;
+  border-radius: 12px;
+  background: #f7f9fc;
+  padding: 8px 10px;
+}
+
+.lyric-source-preview p {
+  margin: 0 0 6px;
+  color: #5f718e;
+  font-size: 12px;
+}
+
+.lyric-source-preview pre {
+  margin: 0;
+  max-height: 190px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #223047;
+  white-space: pre-wrap;
+}
+
+.theme-dark .lyric-source-dialog {
+  background: #1a2029;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+}
+
+.theme-dark .lyric-source-dialog-head h3 {
+  color: #e6ecf6;
+}
+
+.theme-dark .lyric-source-search input {
+  border-color: #334355;
+  background: #111a25;
+  color: #e6edf8;
+}
+
+.theme-dark .lyric-source-tab {
+  border-color: #394a5e;
+  background: #202a37;
+  color: #a8b9d1;
+}
+
+.theme-dark .lyric-source-tab span {
+  color: #93a7c2;
+}
+
+.theme-dark .lyric-source-tab.active {
+  border-color: #5b81ca;
+  color: #8ab3ff;
+  background: rgba(76, 118, 197, 0.28);
+}
+
+.theme-dark .lyric-source-error {
+  color: #ff8080;
+}
+
+.theme-dark .lyric-source-list {
+  border-color: #2f3c4c;
+  background: #121a26;
+}
+
+.theme-dark .lyric-source-empty {
+  color: #8fa2bc;
+}
+
+.theme-dark .lyric-source-item {
+  border-color: #344457;
+  background: #1b2533;
+}
+
+.theme-dark .lyric-source-item-main strong {
+  color: #e8edf7;
+}
+
+.theme-dark .lyric-source-item-main small {
+  color: #a3b3c8;
+}
+
+.theme-dark .lyric-source-item-meta {
+  color: #8d9fba;
+}
+
+.theme-dark .lyric-source-preview {
+  border-color: #334457;
+  background: #141d2a;
+}
+
+.theme-dark .lyric-source-preview p {
+  color: #9eb0cb;
+}
+
+.theme-dark .lyric-source-preview pre {
+  color: #dce6f7;
+}

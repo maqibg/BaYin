@@ -90,6 +90,73 @@
 }
 .np-tb-drag:active { cursor: grabbing; }
 
+.np-tb-actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.np-source-wrap {
+  position: relative;
+}
+
+.np-source-wrap-inline {
+  display: inline-flex;
+}
+
+.np-source-wrap-inline .np-lyric-ctl-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.np-source-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 204px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 14, 22, 0.94);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(12px);
+  padding: 6px;
+  z-index: 28;
+}
+
+.np-source-menu-from-lyrics {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.np-source-menu-head {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.58);
+  padding: 6px 8px 8px;
+}
+
+.np-source-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.35;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.np-source-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.np-source-menu-item.active {
+  color: #7dc5ff;
+  background: rgba(125, 197, 255, 0.17);
+}
+
 /* ---- 主体：左列 + 右列 ---- */
 .np-body {
   flex: 1;
@@ -682,6 +749,20 @@
   transition: opacity 0.2s ease, background 0.2s ease;
 }
 
+.np-lyrics-raw {
+  padding-right: 0;
+}
+
+.np-lyric-line-raw {
+  cursor: default;
+  opacity: 0.92;
+}
+
+.np-lyric-line-raw:hover {
+  opacity: 0.92;
+  background: transparent;
+}
+
 .np-lyric-line:hover {
   opacity: 0.72;
   background: rgba(255, 255, 255, 0.05);
@@ -700,6 +781,11 @@
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.np-lyric-main-raw {
+  color: rgba(255, 255, 255, 0.88);
+  transform: none !important;
 }
 
 .np-right-center .np-lyric-main {
