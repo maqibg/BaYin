@@ -28,7 +28,7 @@ use commands::{
 use db::DbState;
 use utils::cover::CoverCache;
 use std::sync::Mutex;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, LogicalSize, Size};
 use rayon::iter::{ParallelIterator, IntoParallelRefIterator};
 
 #[cfg(desktop)]
@@ -63,8 +63,13 @@ pub fn run() {
         .plugin(tauri_plugin_process::init());
 
     // 窗口状态插件仅桌面端使用（必须在窗口创建前注册）
+    // 对主窗口禁用“启动时恢复历史尺寸/位置”，保证默认窗口尺寸生效。
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+    let builder = builder.plugin(
+        tauri_plugin_window_state::Builder::default()
+            .skip_initial_state("main")
+            .build(),
+    );
 
     builder
         .invoke_handler(tauri::generate_handler![
@@ -212,6 +217,35 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 if let Some(window) = app.get_webview_window("main") {
+                    const OLD_DEFAULT_WIDTH: f64 = 800.0;
+                    const OLD_DEFAULT_HEIGHT: f64 = 600.0;
+                    const DEFAULT_WIDTH: f64 = 1280.0;
+                    const DEFAULT_HEIGHT: f64 = 756.0;
+                    const MIN_WINDOW_SIDE: f64 = 507.0;
+
+                    let _ = window.set_min_size(Some(Size::Logical(LogicalSize::new(
+                        MIN_WINDOW_SIDE,
+                        MIN_WINDOW_SIDE,
+                    ))));
+
+                    if let (Ok(current_size), Ok(scale_factor)) =
+                        (window.inner_size(), window.scale_factor())
+                    {
+                        let logical_width = current_size.width as f64 / scale_factor;
+                        let logical_height = current_size.height as f64 / scale_factor;
+                        let is_legacy_default =
+                            (logical_width - OLD_DEFAULT_WIDTH).abs() <= 2.0
+                                && (logical_height - OLD_DEFAULT_HEIGHT).abs() <= 2.0;
+
+                        if is_legacy_default {
+                            let _ = window.set_size(Size::Logical(LogicalSize::new(
+                                DEFAULT_WIDTH,
+                                DEFAULT_HEIGHT,
+                            )));
+                            let _ = window.center();
+                        }
+                    }
+
                     let _ = window.as_ref().window().show();
                 }
             }

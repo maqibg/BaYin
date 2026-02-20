@@ -14,8 +14,10 @@
       {
         "label": "main",
         "title": "BaYin",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 756,
+        "minWidth": 507,
+        "minHeight": 507,
         "decorations": false,
         "visible": false
       }

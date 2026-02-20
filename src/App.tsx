@@ -8,6 +8,7 @@ import * as Checkbox from "@radix-ui/react-checkbox";
 import * as Select from "@radix-ui/react-select";
 import { DiscIcon, ImageIcon } from "@radix-ui/react-icons";
 import { animate, motion } from "framer-motion";
+import NowPlayingPage from "./NowPlayingPage";
 
 type Page =
   | "songs"
@@ -763,6 +764,7 @@ export default function App() {
   });
 
   const [coverMap, setCoverMap] = useState<CoverMap>({});
+  const [currentSongCoverOriginal, setCurrentSongCoverOriginal] = useState<string | null>(null);
   const [coverStats, setCoverStats] = useState<CoverCacheStats>({
     fileCount: 0,
     totalSizeBytes: 0,
@@ -788,7 +790,7 @@ export default function App() {
 
   const [language, setLanguage] = useState<Language>("中文");
   const [lyricSize, setLyricSize] = useState(20);
-  const [lyricCentered, setLyricCentered] = useState(false);
+  const [lyricCentered, setLyricCentered] = useState(true);
   const [fontWeight, setFontWeight] = useState<FontWeightOption>("Bold");
   const [showCover, setShowCover] = useState(true);
 
@@ -837,6 +839,20 @@ export default function App() {
   const [currentLyricText, setCurrentLyricText] = useState<string>("");
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsError, setLyricsError] = useState<string>("");
+
+  // 全屏播放页
+  const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
+
+  // 全屏播放页设置（持久化到 localStorage）
+  const [npAutoScrollLyrics, setNpAutoScrollLyrics] = useState(
+    () => localStorage.getItem("np_auto_scroll") !== "false",
+  );
+  const [npDynamicBg, setNpDynamicBg] = useState(
+    () => localStorage.getItem("np_dynamic_bg") !== "false",
+  );
+  const [npClickCoverToOpen, setNpClickCoverToOpen] = useState(
+    () => localStorage.getItem("np_click_cover") !== "false",
+  );
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1759,7 +1775,47 @@ export default function App() {
     [currentSongId, songMap],
   );
 
+  useEffect(() => {
+    let disposed = false;
+
+    if (!isTauriEnv || !currentSong?.coverHash) {
+      setCurrentSongCoverOriginal(null);
+      return () => {
+        disposed = true;
+      };
+    }
+
+    setCurrentSongCoverOriginal(null);
+
+    const resolveOriginalCover = async () => {
+      try {
+        const url = await invoke<string | null>("get_cover_url", {
+          hash: currentSong.coverHash,
+          size: "original",
+        });
+
+        if (!disposed) {
+          setCurrentSongCoverOriginal(url ?? null);
+        }
+      } catch {
+        if (!disposed) {
+          setCurrentSongCoverOriginal(null);
+        }
+      }
+    };
+
+    void resolveOriginalCover();
+
+    return () => {
+      disposed = true;
+    };
+  }, [currentSong?.coverHash, isTauriEnv]);
+
   const currentSongCover = useMemo(() => {
+    if (currentSongCoverOriginal) {
+      return currentSongCoverOriginal;
+    }
+
     if (!currentSong) {
       return null;
     }
@@ -1770,7 +1826,7 @@ export default function App() {
 
     const payload = safeParseJson<StreamInfoPayload>(currentSong.streamInfo);
     return payload?.coverUrl ?? null;
-  }, [coverMap, currentSong]);
+  }, [coverMap, currentSong, currentSongCoverOriginal]);
 
   const currentQueueIndex = useMemo(
     () => queueSongs.findIndex((song) => song.id === currentSongId),
@@ -2079,9 +2135,6 @@ export default function App() {
     });
   };
 
-  const playModeLabel =
-    playMode === "sequence" ? "顺序播放" : playMode === "shuffle" ? "随机播放" : "单曲循环";
-
   const onAudioTimeUpdate = () => {
     const audio = audioRef.current;
     if (!audio) {
@@ -2113,9 +2166,6 @@ export default function App() {
     audio.currentTime = time;
     setCurrentTime(time);
   };
-
-  // Suppress unused variable warnings for features temporarily hidden from player bar
-  void formatTime; void duration; void seekTo; void cyclePlayMode; void playModeLabel;
 
   const removeFromQueue = (songId: string) => {
     setQueueSongIds((previous) => previous.filter((id) => id !== songId));
@@ -3989,6 +4039,55 @@ export default function App() {
           </button>
         </div>
       </article>
+
+      <article className="settings-card padded">
+        <p className="block-title">播放页</p>
+
+        <div className="setting-line setting-line-divider">
+          <span>动态封面背景</span>
+          <button
+            type="button"
+            className={`switch ${npDynamicBg ? "on" : ""}`}
+            onClick={() => {
+              const v = !npDynamicBg;
+              setNpDynamicBg(v);
+              localStorage.setItem("np_dynamic_bg", String(v));
+            }}
+          >
+            <span />
+          </button>
+        </div>
+
+        <div className="setting-line setting-line-divider">
+          <span>歌词自动滚动</span>
+          <button
+            type="button"
+            className={`switch ${npAutoScrollLyrics ? "on" : ""}`}
+            onClick={() => {
+              const v = !npAutoScrollLyrics;
+              setNpAutoScrollLyrics(v);
+              localStorage.setItem("np_auto_scroll", String(v));
+            }}
+          >
+            <span />
+          </button>
+        </div>
+
+        <div className="setting-line setting-line-divider">
+          <span>点击封面进入播放页</span>
+          <button
+            type="button"
+            className={`switch ${npClickCoverToOpen ? "on" : ""}`}
+            onClick={() => {
+              const v = !npClickCoverToOpen;
+              setNpClickCoverToOpen(v);
+              localStorage.setItem("np_click_cover", String(v));
+            }}
+          >
+            <span />
+          </button>
+        </div>
+      </article>
     </section>
   );
   const pageContent = (() => {
@@ -4307,7 +4406,15 @@ export default function App() {
 
         <footer className="player-bar">
           <div className="player-left">
-            <div className="player-cover-placeholder">
+            <div
+              className="player-cover-placeholder"
+              style={npClickCoverToOpen && currentSong ? { cursor: "pointer" } : undefined}
+              onClick={() => {
+                if (npClickCoverToOpen && currentSong) {
+                  setIsNowPlayingOpen(true);
+                }
+              }}
+            >
               {currentSongCover ? (
                 <img src={currentSongCover} alt={currentSong?.title || "cover"} className="song-cover-image" />
               ) : currentSong ? (
@@ -4331,6 +4438,17 @@ export default function App() {
           </div>
 
           <div className="player-right">
+            <button
+              type="button"
+              className="icon-btn subtle"
+              aria-label="展开播放页"
+              onClick={() => { setIsNowPlayingOpen(true); }}
+            >
+              {/* 向上展开图标 */}
+              <svg viewBox="0 0 24 24" fill="none" className="line-icon" aria-hidden>
+                <path d="M18 15l-6-6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
             <button type="button" className="icon-btn subtle" aria-label="队列" onClick={() => setShowQueuePanel((previous) => !previous)}><LineIcon name="queue" /></button>
             <input
               type="range"
@@ -4360,6 +4478,52 @@ export default function App() {
         onPause={onAudioPause}
         onEnded={onAudioEnded}
       />
+
+      {isNowPlayingOpen && (
+        <NowPlayingPage
+          currentSong={currentSong}
+          currentSongCover={currentSongCover}
+          isPlaying={isPlaying}
+          isResolvingSong={isResolvingSong}
+          currentTime={currentTime}
+          duration={duration}
+          playMode={playMode}
+          volume={volume}
+          muted={muted}
+          parsedLyrics={parsedLyrics}
+          activeLyricIndex={activeLyricIndex}
+          lyricsLoading={lyricsLoading}
+          lyricsError={lyricsError}
+          queueSongs={queueSongs}
+          currentSongId={currentSongId}
+          theme={theme}
+          lyricSize={lyricSize}
+          lyricCentered={lyricCentered}
+          fontWeight={fontWeight}
+          npAutoScrollLyrics={npAutoScrollLyrics}
+          npDynamicBg={npDynamicBg}
+          coverMap={coverMap}
+          onClose={() => setIsNowPlayingOpen(false)}
+          onTogglePlayPause={() => void togglePlayPause()}
+          onPlayNext={() => void playNext()}
+          onPlayPrevious={() => void playPrevious()}
+          onSeek={seekTo}
+          onCyclePlayMode={cyclePlayMode}
+          onVolumeChange={setVolume}
+          onMutedChange={setMuted}
+          onPlaySong={(id) => void playSongById(id, true)}
+          onRemoveFromQueue={removeFromQueue}
+          onClearQueue={clearQueue}
+          onReloadLyrics={() => {
+            if (currentSong) {
+              void fetchLyricsForSong(currentSong);
+            }
+          }}
+          onLyricSizeChange={setLyricSize}
+          onLyricCenteredChange={setLyricCentered}
+          onFontWeightChange={setFontWeight}
+        />
+      )}
 
       {showQueuePanel ? (
         <section className="floating-panel queue-panel">
