@@ -22,6 +22,10 @@ type FontWeightOption = "Normal" | "Medium" | "Bold";
 type LyricAlign = "left" | "center" | "right";
 type LyricSourceMode = "local" | "online";
 type LyricProvider = "qq" | "kugou" | "netease";
+interface EqualizerPreset {
+  name: string;
+  gains: number[];
+}
 
 interface ParsedLrcLine {
   time: number;
@@ -73,6 +77,8 @@ export interface NowPlayingPageProps {
   currentLyricProvider: LyricProvider | null;
   npAutoScrollLyrics: boolean;
   npDynamicBg: boolean;
+  equalizerEnabled: boolean;
+  equalizerGains: number[];
   onClose: () => void;
   onTogglePlayPause: () => void;
   onPlayNext: () => void;
@@ -90,6 +96,10 @@ export interface NowPlayingPageProps {
   onLyricSizeChange?: (next: number) => void;
   onLyricCenteredChange?: (centered: boolean) => void;
   onFontWeightChange?: (next: FontWeightOption) => void;
+  onEqualizerEnabledChange: (enabled: boolean) => void;
+  onEqualizerGainChange: (index: number, gain: number) => void;
+  onEqualizerApplyPreset: (gains: number[]) => void;
+  onEqualizerReset: () => void;
 }
 
 const FW: Record<FontWeightOption, number> = {
@@ -97,11 +107,34 @@ const FW: Record<FontWeightOption, number> = {
   Medium: 500,
   Bold: 700,
 };
+const EQ_MIN_GAIN = -12;
+const EQ_MAX_GAIN = 12;
+const EQ_FREQUENCIES = [80, 100, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const EQ_PRESETS: EqualizerPreset[] = [
+  { name: "默认", gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  { name: "流行", gains: [4, 3, 2, 1, 0, 0, 1, 2, 3, 2] },
+  { name: "舞曲", gains: [6, 5, 4, 2, 0, -1, 0, 1, 2, 1] },
+  { name: "蓝调", gains: [2, 2, 2, 3, 2, 1, 2, 1, 0, -1] },
+  { name: "古典", gains: [0, 0, 0, 0, 0, 0, 0, 1, 2, 3] },
+  { name: "爵士", gains: [2, 2, 1, 1, 0, 0, 1, 2, 1, 0] },
+  { name: "慢歌", gains: [1, 1, 0, 0, 2, 3, 2, 1, 0, -1] },
+  { name: "电子乐", gains: [5, 4, 3, 0, -1, -2, 0, 2, 4, 5] },
+  { name: "摇滚", gains: [3, 2, 1, 0, -1, 0, 2, 3, 2, 1] },
+  { name: "乡村", gains: [0, 0, 0, 1, 2, 2, 3, 2, 1, 0] },
+  { name: "人声", gains: [-2, -1, 0, 1, 3, 4, 3, 1, -1, -2] },
+];
 
 function fmt(seconds: number) {
   const minute = Math.floor(seconds / 60);
   const second = Math.floor(seconds % 60);
   return `${minute}:${String(second).padStart(2, "0")}`;
+}
+
+function fmtEqFrequency(frequency: number) {
+  if (frequency >= 1000) {
+    return `${frequency / 1000}kHz`;
+  }
+  return `${frequency}Hz`;
 }
 
 function extractColor(src: string): Promise<[string, string]> {
@@ -288,6 +321,8 @@ export default function NowPlayingPage({
   currentLyricProvider,
   npAutoScrollLyrics,
   npDynamicBg,
+  equalizerEnabled,
+  equalizerGains,
   onClose,
   onTogglePlayPause,
   onPlayNext,
@@ -305,9 +340,14 @@ export default function NowPlayingPage({
   onLyricSizeChange,
   onLyricCenteredChange,
   onFontWeightChange,
+  onEqualizerEnabledChange,
+  onEqualizerGainChange,
+  onEqualizerApplyPreset,
+  onEqualizerReset,
 }: NowPlayingPageProps) {
   const [bgColors, setBgColors] = useState<[string, string] | null>(null);
   const [showQueue, setShowQueue] = useState(false);
+  const [showEqualizer, setShowEqualizer] = useState(false);
 
   const [hoverLyricPanel, setHoverLyricPanel] = useState(false);
   const [showNowPlayingInfo, setShowNowPlayingInfo] = useState(
@@ -439,6 +479,11 @@ export default function NowPlayingPage({
         return;
       }
 
+      if (showEqualizer) {
+        setShowEqualizer(false);
+        return;
+      }
+
       if (lyricSourceMenuOpen) {
         setLyricSourceMenuOpen(false);
         return;
@@ -454,7 +499,7 @@ export default function NowPlayingPage({
 
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [lyricMenuOpen, lyricSourceMenuOpen, onClose, showQueue]);
+  }, [lyricMenuOpen, lyricSourceMenuOpen, onClose, showEqualizer, showQueue]);
 
   useEffect(() => {
     if (!lyricMenuOpen) {
@@ -725,6 +770,13 @@ export default function NowPlayingPage({
   const volumePercent = (muted ? 0 : volume) * 100;
   const ModeIcon = playMode === "shuffle" ? IcoShuffle : playMode === "repeat-one" ? IcoRepeatOne : IcoRepeat;
   const modeLabel = playMode === "shuffle" ? "随机播放" : playMode === "repeat-one" ? "单曲循环" : "顺序播放";
+  const normalizedEqGains = EQ_FREQUENCIES.map((_, index) => {
+    const gain = Number(equalizerGains[index] ?? 0);
+    if (!Number.isFinite(gain)) {
+      return 0;
+    }
+    return Math.max(EQ_MIN_GAIN, Math.min(EQ_MAX_GAIN, gain));
+  });
 
   return (
     <div className={`np-overlay${theme === "dark" ? " np-dark" : ""}`}>
@@ -750,6 +802,7 @@ export default function NowPlayingPage({
               onClick={() => {
                 setLyricMenuPos(null);
                 setLyricSourceMenuOpen(false);
+                setShowEqualizer(false);
                 setShowQueue((previous) => !previous);
               }}
               aria-label="播放队列"
@@ -917,7 +970,17 @@ export default function NowPlayingPage({
 
         <div className="np-controls">
           <div className="np-ctrl-l">
-            <button className="np-ic-btn np-ic-dim" disabled title="均衡器（敬请期待）" data-no-drag="true">
+            <button
+              className={`np-ic-btn${showEqualizer ? " np-ic-active" : ""}`}
+              onClick={() => {
+                setLyricMenuPos(null);
+                setLyricSourceMenuOpen(false);
+                setShowQueue(false);
+                setShowEqualizer((previous) => !previous);
+              }}
+              title="均衡器"
+              data-no-drag="true"
+            >
               <MixerHorizontalIcon width={18} height={18} />
             </button>
             <button className="np-ic-btn np-ic-dim" disabled title="频谱（敬请期待）" data-no-drag="true">
@@ -976,6 +1039,90 @@ export default function NowPlayingPage({
             />
           </div>
         </div>
+
+        {showEqualizer ? (
+          <div
+            className="np-eq-backdrop"
+            data-no-drag="true"
+            onClick={() => setShowEqualizer(false)}
+          >
+            <section
+              className="np-eq-panel"
+              data-no-drag="true"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <header className="np-eq-head">
+                <h3>均衡器</h3>
+                <div className="np-eq-head-actions">
+                  <button
+                    type="button"
+                    className={`np-eq-switch${equalizerEnabled ? " on" : ""}`}
+                    onClick={() => onEqualizerEnabledChange(!equalizerEnabled)}
+                  >
+                    {equalizerEnabled ? "已启用" : "已关闭"}
+                  </button>
+                  <button
+                    type="button"
+                    className="np-eq-close"
+                    onClick={() => setShowEqualizer(false)}
+                    aria-label="关闭均衡器"
+                  >
+                    ×
+                  </button>
+                </div>
+              </header>
+
+              <div className="np-eq-presets">
+                {EQ_PRESETS.map((preset) => {
+                  const isActive = preset.gains.every(
+                    (gain, index) => Math.abs(gain - normalizedEqGains[index]) < 0.05,
+                  );
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      className={`np-eq-preset${isActive ? " active" : ""}`}
+                      onClick={() => onEqualizerApplyPreset(preset.gains)}
+                    >
+                      {preset.name}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className={`np-eq-bands${equalizerEnabled ? "" : " off"}`}>
+                {EQ_FREQUENCIES.map((frequency, index) => (
+                  <div key={frequency} className="np-eq-band">
+                    <span className="np-eq-gain">{normalizedEqGains[index].toFixed(1)}dB</span>
+                    <div className="np-eq-slider-wrap">
+                      <input
+                        type="range"
+                        className="np-eq-slider"
+                        min={EQ_MIN_GAIN}
+                        max={EQ_MAX_GAIN}
+                        step={0.1}
+                        value={normalizedEqGains[index]}
+                        style={{
+                          "--eq-pct": `${((normalizedEqGains[index] - EQ_MIN_GAIN) / (EQ_MAX_GAIN - EQ_MIN_GAIN)) * 100}%`,
+                        } as CSSProperties}
+                        onChange={(event) => onEqualizerGainChange(index, Number(event.target.value))}
+                        aria-label={`${fmtEqFrequency(frequency)} 增益`}
+                      />
+                    </div>
+                    <span className="np-eq-frequency">{fmtEqFrequency(frequency)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <footer className="np-eq-foot">
+                <button type="button" className="np-eq-reset" onClick={onEqualizerReset}>
+                  重置
+                </button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
 
         {lyricMenuPos && (
           <div

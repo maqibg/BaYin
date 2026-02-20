@@ -1,13 +1,13 @@
 /// 10-band Biquad EQ filter.
 ///
-/// Band 0 (32 Hz): lowshelf
-/// Bands 1-8 (64–8000 Hz): peaking, Q = 1.4
+/// Band 0 (80 Hz): lowshelf
+/// Bands 1-8 (100–8000 Hz): peaking, Q = 1.4
 /// Band 9 (16000 Hz): highshelf
 ///
 /// Each channel gets independent filter state (stereo = 20 instances).
 
 const EQ_FREQUENCIES: [f32; 10] = [
-    32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+    80.0, 100.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
 
 #[derive(Clone)]
@@ -155,6 +155,10 @@ impl Equalizer {
 
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    pub fn gains(&self) -> [f32; 10] {
+        self.gains
     }
 
     pub fn reset(&mut self) {

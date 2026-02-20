@@ -157,8 +157,10 @@ fn execute_play(
 
                     let effective_rate = if resampler.is_some() { out_rate } else { *source_sample_rate };
                     {
+                        let current_eq_gains = eq.gains();
                         let mut new_eq = Equalizer::new(effective_rate, output_channels as usize);
                         new_eq.set_enabled(eq.is_enabled());
+                        new_eq.set_gains(&current_eq_gains);
                         std::mem::swap(eq, &mut new_eq);
                     }
 

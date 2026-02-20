@@ -463,6 +463,213 @@
   cursor: pointer;
 }
 
+/* ---- 均衡器弹窗 ---- */
+.np-eq-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.np-eq-panel {
+  width: min(900px, calc(100% - 24px));
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(16, 18, 28, 0.94);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(14px);
+  padding: 18px 20px 16px;
+}
+
+.np-eq-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.np-eq-head h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.np-eq-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.np-eq-switch,
+.np-eq-close,
+.np-eq-preset,
+.np-eq-reset {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.np-eq-switch {
+  min-width: 72px;
+  height: 32px;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.np-eq-switch.on {
+  border-color: rgba(125, 197, 255, 0.52);
+  background: rgba(125, 197, 255, 0.2);
+  color: #7dc5ff;
+}
+
+.np-eq-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.np-eq-presets {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.np-eq-preset {
+  border-radius: 999px;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.np-eq-preset.active {
+  border-color: rgba(125, 197, 255, 0.56);
+  background: rgba(125, 197, 255, 0.2);
+  color: #7dc5ff;
+}
+
+.np-eq-bands {
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.np-eq-bands.off {
+  opacity: 0.65;
+}
+
+.np-eq-band {
+  min-width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.np-eq-gain {
+  width: 100%;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.np-eq-frequency {
+  width: 100%;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+}
+
+.np-eq-slider-wrap {
+  width: 48px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.np-eq-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 166px;
+  height: 4px;
+  transform: rotate(-90deg);
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    rgba(125, 197, 255, 0.9) 0%,
+    rgba(125, 197, 255, 0.9) var(--eq-pct, 50%),
+    rgba(255, 255, 255, 0.2) var(--eq-pct, 50%),
+    rgba(255, 255, 255, 0.2) 100%
+  );
+  cursor: pointer;
+}
+
+.np-eq-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: none;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+}
+
+.np-eq-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: none;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+}
+
+.np-eq-slider:focus-visible,
+.np-eq-close:focus-visible,
+.np-eq-switch:focus-visible,
+.np-eq-preset:focus-visible,
+.np-eq-reset:focus-visible {
+  outline: 2px solid rgba(125, 197, 255, 0.72);
+  outline-offset: 2px;
+}
+
+.np-eq-foot {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.np-eq-reset {
+  height: 30px;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.np-eq-switch:hover,
+.np-eq-close:hover,
+.np-eq-preset:hover,
+.np-eq-reset:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
 /* ================================================
    队列底部弹窗
    ================================================ */
@@ -653,6 +860,9 @@
   .np-progress { padding: 8px 16px 4px; }
   .np-topbar { padding: 14px 16px 10px; }
   .np-vol-slider { width: 64px; }
+  .np-eq-panel { padding: 14px 14px 12px; width: min(96vw, 760px); }
+  .np-eq-bands { overflow-x: auto; padding-bottom: 4px; }
+  .np-eq-band { min-width: 60px; }
 }
 @media (max-width: 640px) {
   .np-left { display: none; }

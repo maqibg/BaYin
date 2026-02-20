@@ -109,6 +109,26 @@ interface ScanProgress {
   errors: number;
 }
 
+interface AudioTimePayload {
+  position: number;
+  duration: number;
+}
+
+interface AudioStateChangedPayload {
+  is_playing: boolean;
+}
+
+interface AudioErrorPayload {
+  message: string;
+}
+
+interface AudioPlaybackState {
+  is_playing: boolean;
+  position_secs: number;
+  duration_secs: number;
+  volume: number;
+}
+
 interface Playlist {
   id: string;
   name: string;
@@ -511,6 +531,25 @@ const DEFAULT_LYRIC_PROVIDER_ENABLED: Record<LyricProvider, boolean> = {
 };
 
 const DEFAULT_LYRIC_PROVIDER_ORDER: LyricProvider[] = ["qq", "kugou", "netease"];
+
+const EQ_MIN_GAIN = -12;
+const EQ_MAX_GAIN = 12;
+const EQ_FREQUENCIES = [80, 100, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const;
+const EQ_DEFAULT_GAINS = new Array(EQ_FREQUENCIES.length).fill(0);
+
+function clampEqGain(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(EQ_MIN_GAIN, Math.min(EQ_MAX_GAIN, value));
+}
+
+function normalizeEqGains(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [...EQ_DEFAULT_GAINS];
+  }
+  return EQ_FREQUENCIES.map((_, index) => clampEqGain(Number(value[index] ?? 0)));
+}
 
 
 function parseMessage(error: unknown): string {
@@ -915,6 +954,8 @@ export default function App() {
   const [playMode, setPlayMode] = useState<PlayMode>("sequence");
   const [volume, setVolume] = useState(0.72);
   const [muted, setMuted] = useState(false);
+  const [eqEnabled, setEqEnabled] = useState(true);
+  const [eqGains, setEqGains] = useState<number[]>(() => [...EQ_DEFAULT_GAINS]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
@@ -956,6 +997,9 @@ export default function App() {
   );
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioEqGraphReadyRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const lyricRequestVersionRef = useRef(0);
   const lyricPreviewRequestVersionRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1147,6 +1191,8 @@ export default function App() {
       showCover?: boolean;
       volume?: number;
       muted?: boolean;
+      eqEnabled?: boolean;
+      eqGains?: number[];
       lyricSourceMode?: LyricSourceMode;
       lyricProviderEnabled?: Partial<Record<LyricProvider, boolean>>;
       lyricProviderPreference?: LyricProvider[];
@@ -1175,6 +1221,12 @@ export default function App() {
       }
       if (typeof parsedUiSettings.muted === "boolean") {
         setMuted(parsedUiSettings.muted);
+      }
+      if (typeof parsedUiSettings.eqEnabled === "boolean") {
+        setEqEnabled(parsedUiSettings.eqEnabled);
+      }
+      if (Array.isArray(parsedUiSettings.eqGains)) {
+        setEqGains(normalizeEqGains(parsedUiSettings.eqGains));
       }
       if (parsedUiSettings.lyricSourceMode === "local" || parsedUiSettings.lyricSourceMode === "online") {
         setLyricSourceMode(parsedUiSettings.lyricSourceMode);
@@ -1255,6 +1307,8 @@ export default function App() {
         showCover,
         volume,
         muted,
+        eqEnabled,
+        eqGains,
         lyricSourceMode,
         lyricProviderEnabled,
         lyricProviderPreference,
@@ -1267,6 +1321,8 @@ export default function App() {
     language,
     lyricAutoPerSourceLimit,
     lyricCentered,
+    eqEnabled,
+    eqGains,
     lyricManualPerSourceLimit,
     lyricProviderEnabled,
     lyricProviderPreference,
@@ -2119,21 +2175,113 @@ export default function App() {
     setCurrentSongId((previous) => (previous && songMap.has(previous) ? previous : songs[0].id));
   }, [songMap, songs]);
 
+  const ensureAudioEqGraph = useCallback((): boolean => {
+    if (isTauriEnv) {
+      return false;
+    }
+    if (audioEqGraphReadyRef.current && eqFiltersRef.current.length === EQ_FREQUENCIES.length) {
+      return true;
+    }
+
+    const audio = audioRef.current;
+    if (!audio || typeof window === "undefined") {
+      return false;
+    }
+
+    const AudioContextCtor =
+      window.AudioContext
+      ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) {
+      return false;
+    }
+
+    try {
+      const context = new AudioContextCtor();
+      const source = context.createMediaElementSource(audio);
+      const filters = EQ_FREQUENCIES.map((frequency, index) => {
+        const filter = context.createBiquadFilter();
+        filter.frequency.value = frequency;
+        if (index === 0) {
+          filter.type = "lowshelf";
+          filter.Q.value = 0.707;
+        } else if (index === EQ_FREQUENCIES.length - 1) {
+          filter.type = "highshelf";
+          filter.Q.value = 0.707;
+        } else {
+          filter.type = "peaking";
+          filter.Q.value = 1.4;
+        }
+        return filter;
+      });
+
+      source.connect(filters[0]);
+      for (let index = 0; index < filters.length - 1; index += 1) {
+        filters[index].connect(filters[index + 1]);
+      }
+      filters[filters.length - 1].connect(context.destination);
+
+      audioContextRef.current = context;
+      eqFiltersRef.current = filters;
+      audioEqGraphReadyRef.current = true;
+      return true;
+    } catch (error) {
+      console.error("初始化均衡器音频链路失败：", error);
+      const context = audioContextRef.current;
+      if (context) {
+        try {
+          void context.close();
+        } catch {
+        }
+      }
+      eqFiltersRef.current = [];
+      audioContextRef.current = null;
+      audioEqGraphReadyRef.current = false;
+      return false;
+    }
+  }, [isTauriEnv]);
+
   useEffect(() => {
+    const normalized = normalizeEqGains(eqGains);
+    const filters = eqFiltersRef.current;
+    if (filters.length === EQ_FREQUENCIES.length) {
+      for (let index = 0; index < filters.length; index += 1) {
+        filters[index].gain.value = eqEnabled ? normalized[index] : 0;
+      }
+    }
+
+    if (!isTauriEnv) {
+      return;
+    }
+
+    void invoke("audio_set_eq_enabled", { enabled: eqEnabled }).catch(() => {
+    });
+    void invoke("audio_set_eq_bands", { gains: normalized }).catch(() => {
+    });
+  }, [eqEnabled, eqGains, isTauriEnv]);
+
+  useEffect(() => {
+    if (isTauriEnv) {
+      void invoke("audio_set_volume", { volume: muted ? 0 : volume }).catch(() => {
+      });
+      return;
+    }
     const audio = audioRef.current;
     if (!audio) {
       return;
     }
     audio.volume = volume;
-  }, [volume]);
+  }, [isTauriEnv, muted, volume]);
 
   useEffect(() => {
+    if (isTauriEnv) {
+      return;
+    }
     const audio = audioRef.current;
     if (!audio) {
       return;
     }
     audio.muted = muted;
-  }, [muted]);
+  }, [isTauriEnv, muted]);
 
   const findServerBySong = useCallback(
     (song: DbSong): StreamServerConfig | null => {
@@ -2153,6 +2301,47 @@ export default function App() {
     },
     [streamServers],
   );
+
+  const resumeAudioContextIfNeeded = useCallback(async () => {
+    const context = audioContextRef.current;
+    if (!context || context.state !== "suspended") {
+      return;
+    }
+    try {
+      await context.resume();
+    } catch {
+    }
+  }, []);
+
+  const handleEqualizerEnabledChange = useCallback((enabled: boolean) => {
+    ensureAudioEqGraph();
+    setEqEnabled(enabled);
+  }, [ensureAudioEqGraph]);
+
+  const handleEqualizerGainChange = useCallback((index: number, gain: number) => {
+    ensureAudioEqGraph();
+    setEqEnabled(true);
+    setEqGains((previous) => {
+      if (index < 0 || index >= previous.length) {
+        return previous;
+      }
+      const next = [...previous];
+      next[index] = clampEqGain(gain);
+      return next;
+    });
+  }, [ensureAudioEqGraph]);
+
+  const handleEqualizerApplyPreset = useCallback((gains: number[]) => {
+    ensureAudioEqGraph();
+    setEqEnabled(true);
+    setEqGains(normalizeEqGains(gains));
+  }, [ensureAudioEqGraph]);
+
+  const handleEqualizerReset = useCallback(() => {
+    ensureAudioEqGraph();
+    setEqEnabled(true);
+    setEqGains([...EQ_DEFAULT_GAINS]);
+  }, [ensureAudioEqGraph]);
 
   const updateSongLyricBinding = useCallback((song: DbSong, binding: SongLyricBinding) => {
     const bindingKey = createSongLyricBindingKey(song);
@@ -2704,7 +2893,7 @@ export default function App() {
     }
   }, [currentSong, fetchOnlineLyricByCandidate, updateSongLyricBinding]);
 
-  const resolveSongSrc = useCallback(
+  const resolveSongSource = useCallback(
     async (song: DbSong) => {
       if (song.sourceType === "stream") {
         const payload = safeParseJson<StreamInfoPayload>(song.streamInfo);
@@ -2720,8 +2909,8 @@ export default function App() {
         throw new Error("歌曲文件路径为空");
       }
 
-      if (isTauriEnv) {
-        return convertFileSrc(song.filePath);
+      if (!isTauriEnv) {
+        return song.filePath;
       }
 
       return song.filePath;
@@ -2733,7 +2922,10 @@ export default function App() {
     async (songId: string, autoPlay = true) => {
       const song = songMap.get(songId);
       const audio = audioRef.current;
-      if (!song || !audio) {
+      if (!song) {
+        return;
+      }
+      if (!isTauriEnv && !audio) {
         return;
       }
 
@@ -2743,14 +2935,23 @@ export default function App() {
       setDuration(song.duration || 0);
 
       try {
-        const src = await resolveSongSrc(song);
-        if (audio.src !== src) {
-          audio.src = src;
-        }
+        const source = await resolveSongSource(song);
+        if (isTauriEnv) {
+          if (autoPlay) {
+            await invoke("audio_play", { source });
+            setIsPlaying(true);
+          }
+        } else if (audio) {
+          const src = convertFileSrc(source);
+          if (audio.src !== src) {
+            audio.src = src;
+          }
 
-        if (autoPlay) {
-          await audio.play();
-          setIsPlaying(true);
+          if (autoPlay) {
+            await resumeAudioContextIfNeeded();
+            await audio.play();
+            setIsPlaying(true);
+          }
         }
 
         await fetchLyricsForSong(song);
@@ -2761,7 +2962,7 @@ export default function App() {
         setIsResolvingSong(false);
       }
     },
-    [fetchLyricsForSong, resolveSongSrc, songMap],
+    [fetchLyricsForSong, isTauriEnv, resolveSongSource, resumeAudioContextIfNeeded, songMap],
   );
 
   const playNext = useCallback(async () => {
@@ -2790,19 +2991,121 @@ export default function App() {
     }
   }, [currentQueueIndex, playSongById, queueSongs]);
 
-  const togglePlayPause = useCallback(async () => {
-    const audio = audioRef.current;
-    if (!audio) {
+  useEffect(() => {
+    if (!isTauriEnv) {
       return;
     }
 
+    let disposed = false;
+    let unlistenTime: UnlistenFn | null = null;
+    let unlistenStateChanged: UnlistenFn | null = null;
+    let unlistenEnded: UnlistenFn | null = null;
+    let unlistenError: UnlistenFn | null = null;
+
+    const bindEvents = async () => {
+      unlistenTime = await listen<AudioTimePayload>("audio:time", (event) => {
+        if (disposed || !event.payload) {
+          return;
+        }
+        const position = Number(event.payload.position ?? 0);
+        const nextDuration = Number(event.payload.duration ?? 0);
+        setCurrentTime(Number.isFinite(position) ? Math.max(0, position) : 0);
+        if (Number.isFinite(nextDuration) && nextDuration > 0) {
+          setDuration(nextDuration);
+        }
+      });
+
+      unlistenStateChanged = await listen<AudioStateChangedPayload>("audio:state_changed", (event) => {
+        if (disposed || !event.payload) {
+          return;
+        }
+        setIsPlaying(Boolean(event.payload.is_playing));
+      });
+
+      unlistenEnded = await listen("audio:ended", () => {
+        if (disposed) {
+          return;
+        }
+        void playNext();
+      });
+
+      unlistenError = await listen<AudioErrorPayload>("audio:error", (event) => {
+        if (disposed || !event.payload) {
+          return;
+        }
+        setIsPlaying(false);
+        setScanMessage(`播放失败：${event.payload.message || "未知错误"}`);
+      });
+    };
+
+    const syncInitialState = async () => {
+      try {
+        const state = await invoke<AudioPlaybackState>("audio_get_state");
+        if (disposed || !state) {
+          return;
+        }
+        setIsPlaying(Boolean(state.is_playing));
+        setCurrentTime(Number.isFinite(state.position_secs) ? Math.max(0, state.position_secs) : 0);
+        if (Number.isFinite(state.duration_secs) && state.duration_secs > 0) {
+          setDuration(state.duration_secs);
+        }
+      } catch {
+      }
+    };
+
+    void bindEvents();
+    void syncInitialState();
+
+    return () => {
+      disposed = true;
+      if (unlistenTime) {
+        unlistenTime();
+      }
+      if (unlistenStateChanged) {
+        unlistenStateChanged();
+      }
+      if (unlistenEnded) {
+        unlistenEnded();
+      }
+      if (unlistenError) {
+        unlistenError();
+      }
+    };
+  }, [isTauriEnv, playNext]);
+
+  const togglePlayPause = useCallback(async () => {
     if (!currentSongId && queueSongs.length) {
       await playSongById(queueSongs[0].id, true);
       return;
     }
 
+    if (isTauriEnv) {
+      try {
+        if (isPlaying) {
+          await invoke("audio_pause");
+          setIsPlaying(false);
+        } else {
+          if (currentSongId && currentTime <= 0.01) {
+            await playSongById(currentSongId, true);
+          } else {
+            await invoke("audio_resume");
+            setIsPlaying(true);
+          }
+        }
+      } catch (error) {
+        setScanMessage(`播放失败：${parseMessage(error)}`);
+      }
+      return;
+    }
+
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
     if (audio.paused) {
       try {
+        await resumeAudioContextIfNeeded();
         await audio.play();
         setIsPlaying(true);
       } catch (error) {
@@ -2812,7 +3115,7 @@ export default function App() {
       audio.pause();
       setIsPlaying(false);
     }
-  }, [currentSongId, playSongById, queueSongs]);
+  }, [currentSongId, currentTime, isPlaying, isTauriEnv, playSongById, queueSongs, resumeAudioContextIfNeeded]);
 
   const cyclePlayMode = () => {
     setPlayMode((previous) => {
@@ -2842,14 +3145,26 @@ export default function App() {
     setDuration(audio.duration || 0);
   };
 
-  const onAudioPlay = () => setIsPlaying(true);
+  const onAudioPlay = () => {
+    setIsPlaying(true);
+    void resumeAudioContextIfNeeded();
+  };
   const onAudioPause = () => setIsPlaying(false);
 
   const onAudioEnded = () => {
+    if (isTauriEnv) {
+      return;
+    }
     void playNext();
   };
 
   const seekTo = (time: number) => {
+    if (isTauriEnv) {
+      void invoke("audio_seek", { positionSecs: time }).catch(() => {
+      });
+      setCurrentTime(time);
+      return;
+    }
     const audio = audioRef.current;
     if (!audio) {
       return;
@@ -2865,10 +3180,15 @@ export default function App() {
       if (remained.length) {
         void playSongById(remained[0].id, true);
       } else {
-        const audio = audioRef.current;
-        if (audio) {
-          audio.pause();
-          audio.src = "";
+        if (isTauriEnv) {
+          void invoke("audio_stop").catch(() => {
+          });
+        } else {
+          const audio = audioRef.current;
+          if (audio) {
+            audio.pause();
+            audio.src = "";
+          }
         }
         setCurrentSongId(null);
         setIsPlaying(false);
@@ -2879,10 +3199,15 @@ export default function App() {
   const clearQueue = () => {
     setQueueSongIds([]);
     setCurrentSongId(null);
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.src = "";
+    if (isTauriEnv) {
+      void invoke("audio_stop").catch(() => {
+      });
+    } else {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.src = "";
+      }
     }
     setIsPlaying(false);
   };
@@ -5330,6 +5655,8 @@ export default function App() {
           currentLyricProvider={currentLyricProvider}
           npAutoScrollLyrics={npAutoScrollLyrics}
           npDynamicBg={npDynamicBg}
+          equalizerEnabled={eqEnabled}
+          equalizerGains={eqGains}
           coverMap={coverMap}
           onClose={() => setIsNowPlayingOpen(false)}
           onTogglePlayPause={() => void togglePlayPause()}
@@ -5352,6 +5679,10 @@ export default function App() {
           onLyricSizeChange={setLyricSize}
           onLyricCenteredChange={setLyricCentered}
           onFontWeightChange={setFontWeight}
+          onEqualizerEnabledChange={handleEqualizerEnabledChange}
+          onEqualizerGainChange={handleEqualizerGainChange}
+          onEqualizerApplyPreset={handleEqualizerApplyPreset}
+          onEqualizerReset={handleEqualizerReset}
         />
       )}
 
