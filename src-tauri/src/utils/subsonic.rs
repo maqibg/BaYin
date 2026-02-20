@@ -138,6 +138,11 @@ fn convert_song(song: &SubsonicSong, config: &StreamServerConfig) -> ScannedSong
         cover_url,
         is_hr: Some(is_hr),
         is_sq: Some(is_sq),
+        format: song.suffix.as_ref().map(|s| s.to_uppercase()),
+        bit_depth: song.bit_depth,
+        sample_rate: song.sampling_rate,
+        bitrate: song.bit_rate,
+        channels: None,
     }
 }
 

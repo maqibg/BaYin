@@ -98,6 +98,13 @@ pub fn read_metadata(path: &Path) -> Result<ScannedSong, String> {
     let duration = properties.duration().as_secs_f64();
     let sample_rate = properties.sample_rate().unwrap_or(0);
     let bit_depth = properties.bit_depth();
+    let bitrate = properties.audio_bitrate();
+    let channels = properties.channels().map(|c| c as u8);
+
+    // 获取文件格式（从扩展名）
+    let format = path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_uppercase());
 
     // 判断音质
     let is_sq = is_lossless_format(path);
@@ -144,6 +151,11 @@ pub fn read_metadata(path: &Path) -> Result<ScannedSong, String> {
         cover_url,
         is_hr: Some(is_hr),
         is_sq: Some(is_sq),
+        format,
+        bit_depth: bit_depth.map(|d| d as u8),
+        sample_rate: if sample_rate > 0 { Some(sample_rate) } else { None },
+        bitrate,
+        channels,
     })
 }
 
@@ -176,6 +188,13 @@ pub fn read_metadata_with_mtime(path: &Path) -> Result<ScannedSongWithMtime, Str
     let duration = properties.duration().as_secs_f64();
     let sample_rate = properties.sample_rate().unwrap_or(0);
     let bit_depth = properties.bit_depth();
+    let bitrate = properties.audio_bitrate();
+    let channels = properties.channels().map(|c| c as u8);
+
+    // Get file format from extension
+    let format = path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_uppercase());
 
     // Determine audio quality
     let is_sq = is_lossless_format(path);
@@ -212,6 +231,11 @@ pub fn read_metadata_with_mtime(path: &Path) -> Result<ScannedSongWithMtime, Str
         file_size,
         is_hr: Some(is_hr),
         is_sq: Some(is_sq),
+        format,
+        bit_depth: bit_depth.map(|d| d as u8),
+        sample_rate: if sample_rate > 0 { Some(sample_rate) } else { None },
+        bitrate,
+        channels,
         file_modified,
     })
 }

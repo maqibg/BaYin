@@ -11,6 +11,21 @@ use super::fft::FftProcessor;
 use super::output::AudioOutput;
 use super::resampler::AudioResampler;
 
+const FADE_OUT_MS: f32 = 150.0;
+const FADE_IN_MS: f32 = 200.0;
+
+enum FadeAction {
+    Pause,
+    Stop,
+    PlayNext { source: String },
+}
+
+enum FadeState {
+    None,
+    FadingIn { gain: f32, step: f32 },
+    FadingOut { gain: f32, step: f32, action: FadeAction },
+}
+
 /// Commands sent from IPC to the audio thread.
 pub enum AudioCommand {
     Play { source: String },
@@ -88,6 +103,98 @@ impl AudioEngine {
     }
 }
 
+/// Open a new audio source, set up output/resampler/EQ, and optionally start with fade-in.
+/// Returns true on success.
+#[allow(clippy::too_many_arguments)]
+fn execute_play(
+    source: &str,
+    with_fade_in: bool,
+    decoder: &mut Option<AudioDecoder>,
+    output: &mut Option<AudioOutput>,
+    resampler: &mut Option<AudioResampler>,
+    resample_buffer: &mut Vec<f32>,
+    eq: &mut Equalizer,
+    fade_state: &mut FadeState,
+    source_sample_rate: &mut u32,
+    source_channels: &mut usize,
+    position_secs: &mut f64,
+    duration_secs: &mut f64,
+    is_playing: &mut bool,
+    volume: f32,
+    state: &Arc<Mutex<PlaybackState>>,
+    app_handle: &AppHandle,
+) -> bool {
+    *decoder = None;
+    *output = None;
+    *resampler = None;
+    resample_buffer.clear();
+    *is_playing = false;
+    *position_secs = 0.0;
+
+    match AudioDecoder::open(source) {
+        Ok(dec) => {
+            *source_sample_rate = dec.info.sample_rate;
+            *source_channels = dec.info.channels;
+            *duration_secs = dec.info.duration_secs;
+
+            let output_channels = (*source_channels).min(2) as u16;
+
+            match AudioOutput::new(*source_sample_rate, output_channels) {
+                Ok(out) => {
+                    let out_rate = out.config.sample_rate.0;
+                    if out_rate != *source_sample_rate {
+                        match AudioResampler::new(
+                            *source_sample_rate,
+                            out_rate,
+                            output_channels as usize,
+                        ) {
+                            Ok(rs) => *resampler = Some(rs),
+                            Err(e) => {
+                                eprintln!("Resampler init warning: {}", e);
+                            }
+                        }
+                    }
+
+                    let effective_rate = if resampler.is_some() { out_rate } else { *source_sample_rate };
+                    {
+                        let mut new_eq = Equalizer::new(effective_rate, output_channels as usize);
+                        new_eq.set_enabled(eq.is_enabled());
+                        std::mem::swap(eq, &mut new_eq);
+                    }
+
+                    let fade_rate = if resampler.is_some() { out_rate } else { *source_sample_rate };
+                    let fade_ch = output_channels as usize;
+
+                    *output = Some(out);
+                    *decoder = Some(dec);
+                    *is_playing = true;
+
+                    if with_fade_in {
+                        *fade_state = FadeState::FadingIn {
+                            gain: 0.0,
+                            step: fade_step(FADE_IN_MS, fade_rate, fade_ch),
+                        };
+                    } else {
+                        *fade_state = FadeState::None;
+                    }
+
+                    update_state(state, *is_playing, *position_secs, *duration_secs, volume);
+                    let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: true });
+                    true
+                }
+                Err(e) => {
+                    let _ = app_handle.emit("audio:error", ErrorPayload { message: e });
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            let _ = app_handle.emit("audio:error", ErrorPayload { message: e });
+            false
+        }
+    }
+}
+
 fn audio_thread(
     cmd_rx: Receiver<AudioCommand>,
     state: Arc<Mutex<PlaybackState>>,
@@ -106,6 +213,7 @@ fn audio_thread(
     let mut is_playing = false;
     let mut source_sample_rate: u32 = 44100;
     let mut source_channels: usize = 2;
+    let mut fade_state = FadeState::None;
 
     let mut last_time_emit = Instant::now();
     let mut last_fft_emit = Instant::now();
@@ -115,73 +223,51 @@ fn audio_thread(
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
                 AudioCommand::Play { source } => {
-                    // Stop current playback
-                    decoder = None;
-                    output = None;
-                    resampler = None;
-                    resample_buffer.clear();
-                    is_playing = false;
-                    position_secs = 0.0;
-
-                    match AudioDecoder::open(&source) {
-                        Ok(dec) => {
-                            source_sample_rate = dec.info.sample_rate;
-                            source_channels = dec.info.channels;
-                            duration_secs = dec.info.duration_secs;
-
-                            let output_channels = source_channels.min(2) as u16;
-
-                            // Try to open output at source rate
-                            match AudioOutput::new(source_sample_rate, output_channels) {
-                                Ok(out) => {
-                                    let out_rate = out.config.sample_rate.0;
-                                    // Set up resampler if needed
-                                    if out_rate != source_sample_rate {
-                                        match AudioResampler::new(
-                                            source_sample_rate,
-                                            out_rate,
-                                            output_channels as usize,
-                                        ) {
-                                            Ok(rs) => resampler = Some(rs),
-                                            Err(e) => {
-                                                eprintln!("Resampler init warning: {}", e);
-                                            }
-                                        }
-                                    }
-
-                                    // Re-init EQ with correct rate
-                                    let effective_rate = if resampler.is_some() { out_rate } else { source_sample_rate };
-                                    {
-                                        let mut new_eq = Equalizer::new(effective_rate, output_channels as usize);
-                                        new_eq.set_enabled(eq.is_enabled());
-                                        std::mem::swap(&mut eq, &mut new_eq);
-                                    }
-
-                                    output = Some(out);
-                                    decoder = Some(dec);
-                                    is_playing = true;
-
-                                    update_state(&state, is_playing, position_secs, duration_secs, volume);
-                                    let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: true });
-                                }
-                                Err(e) => {
-                                    let _ = app_handle.emit("audio:error", ErrorPayload { message: e });
-                                }
-                            }
+                    if is_playing {
+                        // Currently playing: fade out then switch
+                        if let Some(ref out) = output {
+                            out.flush();
                         }
-                        Err(e) => {
-                            let _ = app_handle.emit("audio:error", ErrorPayload { message: e });
-                        }
+                        let out_rate = output.as_ref().map(|o| o.config.sample_rate.0).unwrap_or(source_sample_rate);
+                        let out_ch = output.as_ref().map(|o| o.config.channels as usize).unwrap_or(2);
+                        let current_gain = match &fade_state {
+                            FadeState::FadingIn { gain, .. } => *gain,
+                            FadeState::FadingOut { gain, .. } => *gain,
+                            FadeState::None => 1.0,
+                        };
+                        fade_state = FadeState::FadingOut {
+                            gain: current_gain,
+                            step: fade_step(FADE_OUT_MS, out_rate, out_ch),
+                            action: FadeAction::PlayNext { source },
+                        };
+                    } else {
+                        execute_play(
+                            &source, true,
+                            &mut decoder, &mut output, &mut resampler, &mut resample_buffer,
+                            &mut eq, &mut fade_state,
+                            &mut source_sample_rate, &mut source_channels,
+                            &mut position_secs, &mut duration_secs, &mut is_playing,
+                            volume, &state, &app_handle,
+                        );
                     }
                 }
                 AudioCommand::Pause => {
                     if is_playing {
-                        is_playing = false;
                         if let Some(ref out) = output {
-                            out.pause();
+                            out.flush();
                         }
-                        update_state(&state, false, position_secs, duration_secs, volume);
-                        let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: false });
+                        let out_rate = output.as_ref().map(|o| o.config.sample_rate.0).unwrap_or(source_sample_rate);
+                        let out_ch = output.as_ref().map(|o| o.config.channels as usize).unwrap_or(2);
+                        let current_gain = match &fade_state {
+                            FadeState::FadingIn { gain, .. } => *gain,
+                            FadeState::FadingOut { gain, .. } => *gain,
+                            FadeState::None => 1.0,
+                        };
+                        fade_state = FadeState::FadingOut {
+                            gain: current_gain,
+                            step: fade_step(FADE_OUT_MS, out_rate, out_ch),
+                            action: FadeAction::Pause,
+                        };
                     }
                 }
                 AudioCommand::Resume => {
@@ -190,29 +276,68 @@ fn audio_thread(
                         if let Some(ref out) = output {
                             out.resume();
                         }
+                        let out_rate = output.as_ref().map(|o| o.config.sample_rate.0).unwrap_or(source_sample_rate);
+                        let out_ch = output.as_ref().map(|o| o.config.channels as usize).unwrap_or(2);
+                        fade_state = FadeState::FadingIn {
+                            gain: 0.0,
+                            step: fade_step(FADE_IN_MS, out_rate, out_ch),
+                        };
                         update_state(&state, true, position_secs, duration_secs, volume);
                         let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: true });
+                    } else if is_playing {
+                        // Currently fading out for a pause — reverse into fade-in
+                        if let FadeState::FadingOut { gain, action: FadeAction::Pause, .. } = &fade_state {
+                            let current_gain = *gain;
+                            let out_rate = output.as_ref().map(|o| o.config.sample_rate.0).unwrap_or(source_sample_rate);
+                            let out_ch = output.as_ref().map(|o| o.config.channels as usize).unwrap_or(2);
+                            fade_state = FadeState::FadingIn {
+                                gain: current_gain,
+                                step: fade_step(FADE_IN_MS, out_rate, out_ch),
+                            };
+                        }
                     }
                 }
                 AudioCommand::Stop => {
-                    decoder = None;
-                    output = None;
-                    resampler = None;
-                    resample_buffer.clear();
-                    is_playing = false;
-                    position_secs = 0.0;
-                    duration_secs = 0.0;
-                    fft_proc.set_enabled(false);
-                    update_state(&state, false, 0.0, 0.0, volume);
-                    let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: false });
+                    if is_playing {
+                        if let Some(ref out) = output {
+                            out.flush();
+                        }
+                        let out_rate = output.as_ref().map(|o| o.config.sample_rate.0).unwrap_or(source_sample_rate);
+                        let out_ch = output.as_ref().map(|o| o.config.channels as usize).unwrap_or(2);
+                        let current_gain = match &fade_state {
+                            FadeState::FadingIn { gain, .. } => *gain,
+                            FadeState::FadingOut { gain, .. } => *gain,
+                            FadeState::None => 1.0,
+                        };
+                        fade_state = FadeState::FadingOut {
+                            gain: current_gain,
+                            step: fade_step(FADE_OUT_MS, out_rate, out_ch),
+                            action: FadeAction::Stop,
+                        };
+                    } else {
+                        decoder = None;
+                        output = None;
+                        resampler = None;
+                        resample_buffer.clear();
+                        position_secs = 0.0;
+                        duration_secs = 0.0;
+                        fade_state = FadeState::None;
+                        fft_proc.set_enabled(false);
+                        update_state(&state, false, 0.0, 0.0, volume);
+                        let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: false });
+                    }
                 }
                 AudioCommand::Seek { position_secs: pos } => {
                     if let Some(ref mut dec) = decoder {
-                        if let Err(e) = dec.seek(pos) {
+                        let clamped = if duration_secs > 0.0 {
+                            pos.clamp(0.0, duration_secs)
+                        } else {
+                            pos.max(0.0)
+                        };
+                        if let Err(e) = dec.seek(clamped) {
                             eprintln!("Seek error: {}", e);
                         } else {
-                            position_secs = pos;
-                            // Flush ring buffer so old audio doesn't keep playing
+                            position_secs = clamped;
                             if let Some(ref out) = output {
                                 out.flush();
                             }
@@ -238,17 +363,13 @@ fn audio_thread(
         }
 
         // 2. If playing, decode and feed output
-        // Decode multiple packets per iteration to keep the ring buffer well-fed
-        // and avoid underruns that cause crackling.
+        let mut fade_completed = false;
         if is_playing {
             if let (Some(ref mut dec), Some(ref mut out)) = (&mut decoder, &mut output) {
                 let out_channels = out.config.channels as usize;
 
-                // Decode up to 32 packets per tick to fill the buffer aggressively
                 for _ in 0..32 {
                     let available = out.producer.vacant_len();
-                    // Stop when less than ~8192 samples of space remain,
-                    // ensuring any single decoded packet can fit without dropping data
                     if available < 8192 {
                         break;
                     }
@@ -256,16 +377,12 @@ fn audio_thread(
                     match dec.decode_next() {
                         Ok(Some(mut samples)) => {
                             let decoded_channels = source_channels;
-
-                            // Track decoded frames for position (always at source rate)
                             let decoded_frames = samples.len() / decoded_channels;
 
-                            // Channel conversion if needed
                             if decoded_channels != out_channels {
                                 samples = convert_channels(&samples, decoded_channels, out_channels);
                             }
 
-                            // Resample if needed
                             if let Some(ref mut rs) = resampler {
                                 resample_buffer.extend_from_slice(&samples);
                                 let needed = rs.input_frames_needed() * out_channels;
@@ -276,7 +393,11 @@ fn audio_thread(
                                             let mut resampled = resampled;
                                             eq.process(&mut resampled);
                                             fft_proc.push_samples(&resampled, out_channels);
-                                            apply_volume(&mut resampled, volume);
+                                            if apply_volume_with_fade(&mut resampled, volume, &mut fade_state) {
+                                                out.producer.push_slice(&resampled);
+                                                fade_completed = true;
+                                                break;
+                                            }
                                             out.producer.push_slice(&resampled);
                                         }
                                         Err(e) => {
@@ -289,22 +410,34 @@ fn audio_thread(
                                     }
                                 }
                             } else {
-                                // No resampling needed
                                 eq.process(&mut samples);
                                 fft_proc.push_samples(&samples, out_channels);
-                                apply_volume(&mut samples, volume);
-                                out.producer.push_slice(&samples);
+                                if apply_volume_with_fade(&mut samples, volume, &mut fade_state) {
+                                    out.producer.push_slice(&samples);
+                                    fade_completed = true;
+                                }
+                                if !fade_completed {
+                                    out.producer.push_slice(&samples);
+                                }
                             }
 
-                            // Update position based on decoded frames at source rate
+                            if fade_completed {
+                                break;
+                            }
+
                             position_secs += decoded_frames as f64 / source_sample_rate as f64;
                             if position_secs > duration_secs && duration_secs > 0.0 {
                                 position_secs = duration_secs;
                             }
                         }
                         Ok(None) => {
-                            // End of stream
+                            // End of stream — use accumulated position as true duration
+                            // if the initial duration was unknown or suspiciously off
+                            if duration_secs <= 0.0 || (position_secs - duration_secs).abs() > 1.0 {
+                                duration_secs = position_secs;
+                            }
                             is_playing = false;
+                            fade_state = FadeState::None;
                             update_state(&state, false, duration_secs, duration_secs, volume);
                             let _ = app_handle.emit("audio:ended", ());
                             let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: false });
@@ -312,6 +445,7 @@ fn audio_thread(
                         }
                         Err(e) => {
                             is_playing = false;
+                            fade_state = FadeState::None;
                             let _ = app_handle.emit("audio:error", ErrorPayload { message: e });
                             break;
                         }
@@ -320,9 +454,50 @@ fn audio_thread(
             }
         }
 
-        // 3. Emit time event ~4Hz
+        // 3. Handle fade-out completion
+        if fade_completed {
+            // Take ownership of the action from fade_state
+            let action = std::mem::replace(&mut fade_state, FadeState::None);
+            match action {
+                FadeState::FadingOut { action, .. } => match action {
+                    FadeAction::Pause => {
+                        is_playing = false;
+                        if let Some(ref out) = output {
+                            out.pause();
+                        }
+                        update_state(&state, false, position_secs, duration_secs, volume);
+                        let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: false });
+                    }
+                    FadeAction::Stop => {
+                        decoder = None;
+                        output = None;
+                        resampler = None;
+                        resample_buffer.clear();
+                        is_playing = false;
+                        position_secs = 0.0;
+                        duration_secs = 0.0;
+                        fade_state = FadeState::None;
+                        fft_proc.set_enabled(false);
+                        update_state(&state, false, 0.0, 0.0, volume);
+                        let _ = app_handle.emit("audio:state_changed", StateChangedPayload { is_playing: false });
+                    }
+                    FadeAction::PlayNext { source } => {
+                        execute_play(
+                            &source, true,
+                            &mut decoder, &mut output, &mut resampler, &mut resample_buffer,
+                            &mut eq, &mut fade_state,
+                            &mut source_sample_rate, &mut source_channels,
+                            &mut position_secs, &mut duration_secs, &mut is_playing,
+                            volume, &state, &app_handle,
+                        );
+                    }
+                },
+                _ => {}
+            }
+        }
+
+        // 4. Emit time event ~4Hz
         if is_playing && last_time_emit.elapsed() >= Duration::from_millis(250) {
-            // Compensate for audio buffered in the ring buffer but not yet played
             let playback_pos = if let Some(ref out) = output {
                 let buffered_samples = out.producer.occupied_len();
                 let out_rate = out.config.sample_rate.0 as f64;
@@ -344,7 +519,7 @@ fn audio_thread(
             last_time_emit = Instant::now();
         }
 
-        // 4. Emit FFT event ~30Hz
+        // 5. Emit FFT event ~30Hz
         if fft_proc.is_enabled() && last_fft_emit.elapsed() >= Duration::from_millis(33) {
             let (frequency, waveform) = fft_proc.compute();
             let _ = app_handle.emit(
@@ -357,11 +532,10 @@ fn audio_thread(
             last_fft_emit = Instant::now();
         }
 
-        // 5. Sleep to avoid busy-waiting
+        // 6. Sleep to avoid busy-waiting
         if is_playing {
             std::thread::sleep(Duration::from_millis(1));
         } else {
-            // When not playing, sleep longer
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -382,10 +556,37 @@ fn update_state(
     }
 }
 
-fn apply_volume(samples: &mut [f32], volume: f32) {
-    if (volume - 1.0).abs() > f32::EPSILON {
-        for s in samples.iter_mut() {
-            *s *= volume;
+fn fade_step(duration_ms: f32, sample_rate: u32, channels: usize) -> f32 {
+    1.0 / (duration_ms * 0.001 * sample_rate as f32 * channels as f32)
+}
+
+/// Apply volume and fade envelope per-sample. Returns `true` when a fade-out reaches 0.0.
+fn apply_volume_with_fade(samples: &mut [f32], volume: f32, fade: &mut FadeState) -> bool {
+    match fade {
+        FadeState::None => {
+            if (volume - 1.0).abs() > f32::EPSILON {
+                for s in samples.iter_mut() {
+                    *s *= volume;
+                }
+            }
+            false
+        }
+        FadeState::FadingIn { gain, step } => {
+            for s in samples.iter_mut() {
+                *s *= volume * *gain;
+                *gain = (*gain + *step).min(1.0);
+            }
+            if *gain >= 1.0 {
+                *fade = FadeState::None;
+            }
+            false
+        }
+        FadeState::FadingOut { gain, step, .. } => {
+            for s in samples.iter_mut() {
+                *s *= volume * *gain;
+                *gain = (*gain - *step).max(0.0);
+            }
+            *gain <= 0.0
         }
     }
 }

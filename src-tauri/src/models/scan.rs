@@ -110,5 +110,10 @@ pub struct ScannedSongWithMtime {
     pub file_size: u64,
     pub is_hr: Option<bool>,
     pub is_sq: Option<bool>,
+    pub format: Option<String>,
+    pub bit_depth: Option<u8>,
+    pub sample_rate: Option<u32>,
+    pub bitrate: Option<u32>,
+    pub channels: Option<u8>,
     pub file_modified: i64,
 }

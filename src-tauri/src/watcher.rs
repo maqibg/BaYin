@@ -196,6 +196,11 @@ pub mod desktop {
                             server_song_id: None,
                             stream_info: None,
                             file_modified: Some(song.file_modified),
+                            format: song.format,
+                            bit_depth: song.bit_depth,
+                            sample_rate: song.sample_rate,
+                            bitrate: song.bitrate,
+                            channels: song.channels,
                         }
                     })
                 })

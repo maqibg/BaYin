@@ -3,7 +3,7 @@
 use rusqlite::{Connection, Result};
 use std::path::Path;
 
-const CURRENT_SCHEMA_VERSION: i32 = 2;
+const CURRENT_SCHEMA_VERSION: i32 = 3;
 
 /// Initialize the database with tables and indexes
 pub fn init_db(conn: &Connection) -> Result<()> {
@@ -36,6 +36,9 @@ fn run_migrations(conn: &Connection, from_version: i32) -> Result<()> {
     }
     if from_version < 2 {
         migrate_v2(conn)?;
+    }
+    if from_version < 3 {
+        migrate_v3(conn)?;
     }
 
     Ok(())
@@ -148,6 +151,19 @@ fn migrate_v2(conn: &Connection) -> Result<()> {
 
     // Record version
     conn.execute("INSERT INTO schema_version (version) VALUES (?1)", [2])?;
+
+    Ok(())
+}
+
+/// Version 3: Add audio format columns (format, bit_depth, sample_rate, bitrate, channels)
+fn migrate_v3(conn: &Connection) -> Result<()> {
+    conn.execute("ALTER TABLE songs ADD COLUMN format TEXT", [])?;
+    conn.execute("ALTER TABLE songs ADD COLUMN bit_depth INTEGER", [])?;
+    conn.execute("ALTER TABLE songs ADD COLUMN sample_rate INTEGER", [])?;
+    conn.execute("ALTER TABLE songs ADD COLUMN bitrate INTEGER", [])?;
+    conn.execute("ALTER TABLE songs ADD COLUMN channels INTEGER", [])?;
+
+    conn.execute("INSERT INTO schema_version (version) VALUES (?1)", [3])?;
 
     Ok(())
 }

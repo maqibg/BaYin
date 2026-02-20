@@ -19,7 +19,7 @@ pub struct DbSong {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_sq: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cover_hash: Option<String>,  // SHA256 hash for cover lookup
+    pub cover_hash: Option<String>,
     pub source_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_id: Option<String>,
@@ -29,6 +29,16 @@ pub struct DbSong {
     pub stream_info: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_modified: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit_depth: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_rate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitrate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channels: Option<u8>,
 }
 
 /// Input data for saving a song
@@ -48,13 +58,23 @@ pub struct SongInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_sq: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cover_hash: Option<String>,  // SHA256 hash of cover image
+    pub cover_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_song_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_info: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_modified: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit_depth: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_rate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitrate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channels: Option<u8>,
 }
 
 /// Get all songs from the database (fast loading, no cover data)
@@ -62,7 +82,7 @@ pub fn get_all_songs(conn: &Connection) -> Result<Vec<DbSong>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, artist, album, duration, file_path, file_size,
                 is_hr, is_sq, cover_hash, source_type, server_id, server_song_id,
-                stream_info, file_modified
+                stream_info, file_modified, format, bit_depth, sample_rate, bitrate, channels
          FROM songs
          ORDER BY title COLLATE NOCASE"
     )?;
@@ -84,6 +104,11 @@ pub fn get_all_songs(conn: &Connection) -> Result<Vec<DbSong>> {
             server_song_id: row.get(12)?,
             stream_info: row.get(13)?,
             file_modified: row.get(14)?,
+            format: row.get(15)?,
+            bit_depth: row.get::<_, Option<u8>>(16)?,
+            sample_rate: row.get::<_, Option<u32>>(17)?,
+            bitrate: row.get::<_, Option<u32>>(18)?,
+            channels: row.get::<_, Option<u8>>(19)?,
         })
     })?.collect::<Result<Vec<_>>>()?;
 
@@ -96,7 +121,7 @@ pub fn get_songs_by_source(conn: &Connection, source_type: &str) -> Result<Vec<D
     let mut stmt = conn.prepare(
         "SELECT id, title, artist, album, duration, file_path, file_size,
                 is_hr, is_sq, cover_hash, source_type, server_id, server_song_id,
-                stream_info, file_modified
+                stream_info, file_modified, format, bit_depth, sample_rate, bitrate, channels
          FROM songs
          WHERE source_type = ?1
          ORDER BY title COLLATE NOCASE"
@@ -119,6 +144,11 @@ pub fn get_songs_by_source(conn: &Connection, source_type: &str) -> Result<Vec<D
             server_song_id: row.get(12)?,
             stream_info: row.get(13)?,
             file_modified: row.get(14)?,
+            format: row.get(15)?,
+            bit_depth: row.get::<_, Option<u8>>(16)?,
+            sample_rate: row.get::<_, Option<u32>>(17)?,
+            bitrate: row.get::<_, Option<u32>>(18)?,
+            channels: row.get::<_, Option<u8>>(19)?,
         })
     })?.collect::<Result<Vec<_>>>()?;
 
@@ -139,8 +169,8 @@ pub fn save_songs(
             "INSERT OR REPLACE INTO songs
              (id, title, artist, album, duration, file_path, file_size,
               is_hr, is_sq, cover_hash, source_type, server_id, server_song_id,
-              stream_info, file_modified, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, strftime('%s','now'))"
+              stream_info, file_modified, format, bit_depth, sample_rate, bitrate, channels, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, strftime('%s','now'))"
         )?;
 
         for song in songs {
@@ -160,6 +190,11 @@ pub fn save_songs(
                 song.server_song_id,
                 song.stream_info,
                 song.file_modified,
+                song.format,
+                song.bit_depth,
+                song.sample_rate,
+                song.bitrate,
+                song.channels,
             ])?;
         }
     }

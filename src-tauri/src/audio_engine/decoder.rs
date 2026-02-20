@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::io::Cursor;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
@@ -8,6 +7,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
+
+use super::http_source::HttpStreamSource;
 
 pub struct DecodedInfo {
     pub sample_rate: u32,
@@ -26,13 +27,9 @@ impl AudioDecoder {
     /// Open a local file or HTTP URL for decoding.
     pub fn open(source: &str) -> Result<Self, String> {
         let mss = if source.starts_with("http://") || source.starts_with("https://") {
-            // HTTP source: download into memory
-            let bytes = reqwest::blocking::get(source)
-                .map_err(|e| format!("HTTP request failed: {}", e))?
-                .bytes()
-                .map_err(|e| format!("Failed to read HTTP response: {}", e))?;
-            let cursor = Cursor::new(bytes.to_vec());
-            MediaSourceStream::new(Box::new(cursor), Default::default())
+            // HTTP source: stream via sequential reads (not full download)
+            let http_source = HttpStreamSource::open(source)?;
+            MediaSourceStream::new(Box::new(http_source), Default::default())
         } else {
             // Local file
             let file =
@@ -81,11 +78,14 @@ impl AudioDecoder {
         // Calculate duration
         let duration_secs = codec_params
             .n_frames
-            .map(|n| n as f64 / sample_rate as f64)
-            .or_else(|| {
-                codec_params
-                    .time_base
-                    .and_then(|tb| codec_params.n_frames.map(|n| tb.calc_time(n).seconds as f64))
+            .filter(|&n| n > 0)
+            .map(|n| {
+                if let Some(tb) = codec_params.time_base {
+                    let t = tb.calc_time(n);
+                    t.seconds as f64 + t.frac
+                } else {
+                    n as f64 / sample_rate as f64
+                }
             })
             .unwrap_or(0.0);
 
@@ -140,8 +140,13 @@ impl AudioDecoder {
 
     /// Seek to a position in seconds.
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
+        let clamped = if self.info.duration_secs > 0.0 {
+            position_secs.clamp(0.0, (self.info.duration_secs - 0.1).max(0.0))
+        } else {
+            position_secs.max(0.0)
+        };
         let seek_to = SeekTo::Time {
-            time: Time::from(position_secs),
+            time: Time::from(clamped),
             track_id: Some(self.track_id),
         };
         self.format_reader
