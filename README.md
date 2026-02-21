@@ -1,11 +1,11 @@
 <div align="center">
-<img alt="logo" height="120" src="public/app-icon.png" />
+<img alt="logo" height="120" src="public/app-icon.png" style="margin-bottom: 10px;" />
 <h1>八音 (BaYin)</h1>
 <p>一款基于 Tauri + React 的跨平台音乐播放器，采用 macOS 风格设计</p>
 
 [发行版](https://github.com/CallmeLins/BaYin/releases) | [问题反馈](https://github.com/CallmeLins/BaYin/issues)
 
-<br />
+<br /><br />
 
 ![Stars](https://img.shields.io/github/stars/CallmeLins/BaYin?style=flat)
 ![Version](https://img.shields.io/github/v/release/CallmeLins/BaYin)
@@ -14,7 +14,12 @@
 
 </div>
 
-![main](public/pc_mainpage_light.png)
+<br />
+
+<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 15px; flex-wrap: wrap; margin: 20px 0;">
+  <img alt="桌面端播放器" src="public/pc_playerpage.png" style="height: 350px; width: auto; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);" />
+  <img alt="移动端播放器" src="public/mobile_playerpage1.png" style="height: 350px; width: auto; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);" />
+</div>
 
 ## 技术栈
 
@@ -53,21 +58,18 @@
 
 ## 界面展示
 
-<summary>桌面端 - 浅色主题</summary>
+### 桌面端
+<div align="center" style="display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin: 15px 0;">
+  <img alt="桌面端主页面" src="public/pc_mainpage.png" style="height: 320px; width: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+  <img alt="桌面端播放器页面" src="public/pc_playerpage.png" style="height: 320px; width: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+</div>
 
-![桌面端浅色](public/pc_mainpage_light.png)
-
-<summary>桌面端 - 深色主题</summary>
-
-![桌面端深色](public/pc_mainpage_dark.png)
-
-<summary>桌面端 - 播放页面</summary>
-
-![播放页面](public/pc_playpage.png)
-
-<summary>移动端</summary>
-
-![移动端](public/mobile_mainpage.png)
+### 移动端
+<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; margin: 15px 0;">
+  <img alt="移动端主页面" src="public/mobile_mainpage.png" style="height: 380px; width: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+  <img alt="移动端播放器页面1" src="public/mobile_playerpage1.png" style="height: 380px; width: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+  <img alt="移动端播放器页面2" src="public/mobile_playerpage2.png" style="height: 380px; width: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+</div>
 
 ## 获取
 
@@ -114,9 +116,9 @@ npx tauri build
 
 如果觉得本项目对你有帮助，欢迎 Star 支持！
 
-<div align="center">
-<img src="public/alipay.jpg" alt="支付宝" width="200" />
-<img src="public/wxpay.png" alt="微信支付" width="200" />
+<div align="center" style="margin: 20px 0;">
+<img src="public/alipay.jpg" alt="支付宝" width="200" style="border-radius: 6px; margin-right: 20px;" />
+<img src="public/wxpay.png" alt="微信支付" width="200" style="border-radius: 6px;" />
 </div>
 
 ## 许可证
@@ -125,4 +127,7 @@ npx tauri build
 
 ## Star History
 
+<div align="center" style="margin: 15px 0;">
 [![Star History Chart](https://api.star-history.com/svg?repos=CallmeLins/BaYin&type=Date)](https://star-history.com/#CallmeLins/BaYin&Date)
+</div>
+```
