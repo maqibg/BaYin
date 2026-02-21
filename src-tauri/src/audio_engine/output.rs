@@ -111,8 +111,18 @@ fn build_output_stream(
                     return;
                 }
                 let read = consumer.pop_slice(data);
-                // Fill remaining with silence
-                data[read..].fill(0.0);
+                if read < data.len() {
+                    // Underrun: fade the last valid sample to silence
+                    // instead of a hard cut to 0.0 which causes clicks.
+                    let last_sample = if read > 0 { data[read - 1] } else { 0.0 };
+                    let remaining = data.len() - read;
+                    let fade_len = remaining.min(64); // ~1.5ms at 44100Hz
+                    for i in 0..fade_len {
+                        let t = (i + 1) as f32 / (fade_len + 1) as f32;
+                        data[read + i] = last_sample * (1.0 - t);
+                    }
+                    data[read + fade_len..].fill(0.0);
+                }
             },
             |err| {
                 eprintln!("Audio output error: {}", err);

@@ -1,4 +1,5 @@
 use crossbeam_channel::{Receiver, Sender};
+use ringbuf::HeapProd;
 use ringbuf::traits::{Observer, Producer};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -142,11 +143,12 @@ fn execute_play(
             match AudioOutput::new(*source_sample_rate, output_channels) {
                 Ok(out) => {
                     let out_rate = out.config.sample_rate.0;
+                    let actual_channels = out.config.channels as usize;
                     if out_rate != *source_sample_rate {
                         match AudioResampler::new(
                             *source_sample_rate,
                             out_rate,
-                            output_channels as usize,
+                            actual_channels,
                         ) {
                             Ok(rs) => *resampler = Some(rs),
                             Err(e) => {
@@ -157,13 +159,13 @@ fn execute_play(
 
                     let effective_rate = if resampler.is_some() { out_rate } else { *source_sample_rate };
                     {
-                        let mut new_eq = Equalizer::new(effective_rate, output_channels as usize);
+                        let mut new_eq = Equalizer::new(effective_rate, actual_channels);
                         new_eq.set_enabled(eq.is_enabled());
                         std::mem::swap(eq, &mut new_eq);
                     }
 
                     let fade_rate = if resampler.is_some() { out_rate } else { *source_sample_rate };
-                    let fade_ch = output_channels as usize;
+                    let fade_ch = actual_channels;
 
                     *output = Some(out);
                     *decoder = Some(dec);
@@ -206,6 +208,7 @@ fn audio_thread(
     let mut fft_proc = FftProcessor::new();
     let mut resampler: Option<AudioResampler> = None;
     let mut resample_buffer: Vec<f32> = Vec::new();
+    let mut pending_samples: Vec<f32> = Vec::new();
 
     let mut volume: f32 = 1.0;
     let mut position_secs: f64 = 0.0;
@@ -249,6 +252,7 @@ fn audio_thread(
                             &mut position_secs, &mut duration_secs, &mut is_playing,
                             volume, &state, &app_handle,
                         );
+                        pending_samples.clear();
                     }
                 }
                 AudioCommand::Pause => {
@@ -319,6 +323,7 @@ fn audio_thread(
                         output = None;
                         resampler = None;
                         resample_buffer.clear();
+                        pending_samples.clear();
                         position_secs = 0.0;
                         duration_secs = 0.0;
                         fade_state = FadeState::None;
@@ -342,6 +347,7 @@ fn audio_thread(
                                 out.flush();
                             }
                             eq.reset();
+                            pending_samples.clear();
                             update_state(&state, is_playing, position_secs, duration_secs, volume);
                         }
                     }
@@ -368,7 +374,19 @@ fn audio_thread(
             if let (Some(ref mut dec), Some(ref mut out)) = (&mut decoder, &mut output) {
                 let out_channels = out.config.channels as usize;
 
+                // Flush any pending samples from previous iteration
+                if !pending_samples.is_empty() {
+                    let written = out.producer.push_slice(&pending_samples);
+                    if written > 0 {
+                        pending_samples.drain(..written);
+                    }
+                }
+
                 for _ in 0..32 {
+                    // Don't decode more if we still have unsent samples
+                    if !pending_samples.is_empty() {
+                        break;
+                    }
                     let available = out.producer.vacant_len();
                     if available < 8192 {
                         break;
@@ -386,7 +404,7 @@ fn audio_thread(
                             if let Some(ref mut rs) = resampler {
                                 resample_buffer.extend_from_slice(&samples);
                                 let needed = rs.input_frames_needed() * out_channels;
-                                while resample_buffer.len() >= needed {
+                                while resample_buffer.len() >= needed && pending_samples.is_empty() {
                                     let chunk: Vec<f32> = resample_buffer.drain(..needed).collect();
                                     match rs.process(&chunk) {
                                         Ok(resampled) => {
@@ -394,11 +412,11 @@ fn audio_thread(
                                             eq.process(&mut resampled);
                                             fft_proc.push_samples(&resampled, out_channels);
                                             if apply_volume_with_fade(&mut resampled, volume, &mut fade_state) {
-                                                out.producer.push_slice(&resampled);
+                                                push_or_pend(&mut out.producer, &resampled, &mut pending_samples);
                                                 fade_completed = true;
                                                 break;
                                             }
-                                            out.producer.push_slice(&resampled);
+                                            push_or_pend(&mut out.producer, &resampled, &mut pending_samples);
                                         }
                                         Err(e) => {
                                             eprintln!("Resample error: {}", e);
@@ -413,11 +431,11 @@ fn audio_thread(
                                 eq.process(&mut samples);
                                 fft_proc.push_samples(&samples, out_channels);
                                 if apply_volume_with_fade(&mut samples, volume, &mut fade_state) {
-                                    out.producer.push_slice(&samples);
+                                    push_or_pend(&mut out.producer, &samples, &mut pending_samples);
                                     fade_completed = true;
                                 }
                                 if !fade_completed {
-                                    out.producer.push_slice(&samples);
+                                    push_or_pend(&mut out.producer, &samples, &mut pending_samples);
                                 }
                             }
 
@@ -473,6 +491,7 @@ fn audio_thread(
                         output = None;
                         resampler = None;
                         resample_buffer.clear();
+                        pending_samples.clear();
                         is_playing = false;
                         position_secs = 0.0;
                         duration_secs = 0.0;
@@ -490,6 +509,7 @@ fn audio_thread(
                             &mut position_secs, &mut duration_secs, &mut is_playing,
                             volume, &state, &app_handle,
                         );
+                        pending_samples.clear();
                     }
                 },
                 _ => {}
@@ -561,19 +581,18 @@ fn fade_step(duration_ms: f32, sample_rate: u32, channels: usize) -> f32 {
 }
 
 /// Apply volume and fade envelope per-sample. Returns `true` when a fade-out reaches 0.0.
+/// Always clamps output to [-1.0, 1.0] to prevent DAC clipping.
 fn apply_volume_with_fade(samples: &mut [f32], volume: f32, fade: &mut FadeState) -> bool {
     match fade {
         FadeState::None => {
-            if (volume - 1.0).abs() > f32::EPSILON {
-                for s in samples.iter_mut() {
-                    *s *= volume;
-                }
+            for s in samples.iter_mut() {
+                *s = (*s * volume).clamp(-1.0, 1.0);
             }
             false
         }
         FadeState::FadingIn { gain, step } => {
             for s in samples.iter_mut() {
-                *s *= volume * *gain;
+                *s = (*s * volume * *gain).clamp(-1.0, 1.0);
                 *gain = (*gain + *step).min(1.0);
             }
             if *gain >= 1.0 {
@@ -583,11 +602,19 @@ fn apply_volume_with_fade(samples: &mut [f32], volume: f32, fade: &mut FadeState
         }
         FadeState::FadingOut { gain, step, .. } => {
             for s in samples.iter_mut() {
-                *s *= volume * *gain;
+                *s = (*s * volume * *gain).clamp(-1.0, 1.0);
                 *gain = (*gain - *step).max(0.0);
             }
             *gain <= 0.0
         }
+    }
+}
+
+/// Push samples into the ring buffer. Any overflow is saved to `pending` for the next iteration.
+fn push_or_pend(producer: &mut HeapProd<f32>, samples: &[f32], pending: &mut Vec<f32>) {
+    let written = producer.push_slice(samples);
+    if written < samples.len() {
+        pending.extend_from_slice(&samples[written..]);
     }
 }
 

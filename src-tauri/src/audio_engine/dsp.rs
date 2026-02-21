@@ -183,7 +183,7 @@ impl Equalizer {
                     sample = self.states[band][ch].process(&self.coeffs[band], sample);
                 }
 
-                samples[idx] = sample as f32;
+                samples[idx] = (sample as f32).clamp(-1.0, 1.0);
             }
         }
     }
