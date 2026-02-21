@@ -28,8 +28,8 @@ use commands::{
     search_online_lyrics, fetch_online_lyric,
 };
 use db::DbState;
+use std::{io, path::PathBuf, sync::Mutex};
 use utils::cover::CoverCache;
-use std::sync::Mutex;
 use tauri::{Emitter, Manager, LogicalSize, Size};
 use rayon::iter::{ParallelIterator, IntoParallelRefIterator};
 
@@ -37,6 +37,19 @@ use rayon::iter::{ParallelIterator, IntoParallelRefIterator};
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
+
+fn resolve_portable_data_root() -> io::Result<PathBuf> {
+    let exe_path = std::env::current_exe()?;
+    let exe_dir = exe_path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "Failed to resolve executable directory",
+        )
+    })?;
+    let data_root = exe_dir.join("data");
+    std::fs::create_dir_all(&data_root)?;
+    Ok(data_root)
+}
 
 #[cfg(desktop)]
 #[tauri::command]
@@ -60,18 +73,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init());
-
-    // 窗口状态插件仅桌面端使用（必须在窗口创建前注册）
-    // 对主窗口禁用“启动时恢复历史尺寸/位置”，保证默认窗口尺寸生效。
-    #[cfg(desktop)]
-    let builder = builder.plugin(
-        tauri_plugin_window_state::Builder::default()
-            .skip_initial_state("main")
-            .build(),
-    );
 
     builder
         .invoke_handler(tauri::generate_handler![
@@ -145,26 +148,42 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let data_root = resolve_portable_data_root().expect("Failed to resolve portable data root");
+
+            #[cfg(desktop)]
+            {
+                let webview_data_dir = data_root.join("webview");
+                std::fs::create_dir_all(&webview_data_dir)
+                    .expect("Failed to create webview data directory");
+
+                if app.get_webview_window("main").is_none() {
+                    let main_window_config = app
+                        .config()
+                        .app
+                        .windows
+                        .iter()
+                        .find(|config| config.label == "main")
+                        .cloned()
+                        .expect("Missing main window config");
+
+                    tauri::WebviewWindowBuilder::from_config(app, &main_window_config)
+                        .expect("Failed to build main window from config")
+                        .data_directory(webview_data_dir.clone())
+                        .build()
+                        .expect("Failed to create main window");
+                }
+            }
+
             // 初始化数据库
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("Failed to get app data directory");
-
-            // 确保目录存在
-            std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
-
-            let db_path = app_data_dir.join("bayin.db");
+            let db_dir = data_root.join("db");
+            std::fs::create_dir_all(&db_dir).expect("Failed to create database directory");
+            let db_path = db_dir.join("bayin.db");
             let conn = db::open_db(&db_path).expect("Failed to open database");
 
             app.manage(DbState(Mutex::new(conn)));
 
             // 初始化封面缓存
-            let cache_dir = app
-                .path()
-                .app_cache_dir()
-                .expect("Failed to get app cache directory");
-            let cover_cache_dir = cache_dir.join("covers");
+            let cover_cache_dir = data_root.join("cache").join("covers");
             let cover_cache = CoverCache::new(cover_cache_dir);
             cover_cache.ensure_dirs().expect("Failed to create cover cache directories");
 
@@ -217,7 +236,7 @@ pub fn run() {
                     .build(app)?;
             }
 
-            // 桌面端：窗口状态已恢复，显示窗口
+            // 桌面端：设置主窗口约束并显示窗口
             #[cfg(desktop)]
             {
                 if let Some(window) = app.get_webview_window("main") {
