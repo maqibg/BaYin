@@ -127,6 +127,4 @@ npx tauri build
 
 ## Star History
 
-<div align="center" style="margin: 15px 0;">
 [![Star History Chart](https://api.star-history.com/svg?repos=CallmeLins/BaYin&type=Date)](https://star-history.com/#CallmeLins/BaYin&Date)
-</div>
