@@ -48,6 +48,11 @@ interface DbSong {
   serverSongId?: string;
   streamInfo?: string;
   fileModified?: number;
+  format?: string;
+  bitDepth?: number;
+  sampleRate?: number;
+  bitrate?: number;
+  channels?: number;
 }
 
 export interface NowPlayingPageProps {
@@ -96,6 +101,10 @@ export interface NowPlayingPageProps {
   onLyricSizeChange?: (next: number) => void;
   onLyricCenteredChange?: (centered: boolean) => void;
   onFontWeightChange?: (next: FontWeightOption) => void;
+  onDynamicBgChange?: (enabled: boolean) => void;
+  onOpenCurrentArtist?: (artistName?: string) => void;
+  onOpenCurrentAlbum?: () => void;
+  onOpenSettings?: () => void;
   onEqualizerEnabledChange: (enabled: boolean) => void;
   onEqualizerGainChange: (index: number, gain: number) => void;
   onEqualizerApplyPreset: (gains: number[]) => void;
@@ -203,6 +212,86 @@ function splitLyricLineText(text: string): { main: string; subLines: string[] } 
 
 function normalizeSubLyrics(lines: string[]) {
   return lines.filter((line) => line.trim().length > 0 && !/^[\\/\-—\s]+$/.test(line));
+}
+
+const ARTIST_SPLIT_REGEX = /\/|、/;
+
+function splitArtistNames(artist: string): string[] {
+  return Array.from(
+    new Set(
+      artist
+        .split(ARTIST_SPLIT_REGEX)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+}
+
+function formatSongBitrate(bitrate?: number | null) {
+  if (!Number.isFinite(bitrate ?? NaN) || !bitrate || bitrate <= 0) {
+    return "—";
+  }
+  const kbps = bitrate >= 10000 ? bitrate / 1000 : bitrate;
+  return `${Number.isInteger(kbps) ? kbps : kbps.toFixed(1)} kbps`;
+}
+
+function formatSongSampleRate(sampleRate?: number | null) {
+  if (!Number.isFinite(sampleRate ?? NaN) || !sampleRate || sampleRate <= 0) {
+    return "—";
+  }
+  if (sampleRate >= 1000) {
+    const khz = sampleRate / 1000;
+    return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`;
+  }
+  return `${sampleRate} Hz`;
+}
+
+function formatSongBitDepth(bitDepth?: number | null) {
+  if (!Number.isFinite(bitDepth ?? NaN) || !bitDepth || bitDepth <= 0) {
+    return "—";
+  }
+  return `${bitDepth} bit`;
+}
+
+function formatSongChannels(channels?: number | null) {
+  if (!Number.isFinite(channels ?? NaN) || !channels || channels <= 0) {
+    return "—";
+  }
+  if (channels === 1) {
+    return "单声道";
+  }
+  if (channels === 2) {
+    return "立体声";
+  }
+  return `${channels} 声道`;
+}
+
+function formatSongFileSize(fileSize?: number | null) {
+  if (!Number.isFinite(fileSize ?? NaN) || !fileSize || fileSize <= 0) {
+    return "—";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = fileSize;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const formatted = value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1);
+  return `${formatted} ${units[unitIndex]}`;
+}
+
+function formatSongSourceType(sourceType?: string) {
+  if (!sourceType) {
+    return "—";
+  }
+  if (sourceType === "local") {
+    return "本地";
+  }
+  if (sourceType === "stream") {
+    return "流媒体";
+  }
+  return sourceType;
 }
 
 const IcoDown = () => (
@@ -340,6 +429,10 @@ export default function NowPlayingPage({
   onLyricSizeChange,
   onLyricCenteredChange,
   onFontWeightChange,
+  onDynamicBgChange,
+  onOpenCurrentArtist,
+  onOpenCurrentAlbum,
+  onOpenSettings,
   onEqualizerEnabledChange,
   onEqualizerGainChange,
   onEqualizerApplyPreset,
@@ -378,9 +471,12 @@ export default function NowPlayingPage({
 
   const [lyricMenuPos, setLyricMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [lyricSourceMenuOpen, setLyricSourceMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [showSongInfo, setShowSongInfo] = useState(false);
 
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
   const lyricSourceMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const lyricRefs = useRef<Map<number, HTMLElement>>(new Map());
   const userScrollRef = useRef(false);
   const cooldownRef = useRef<number | null>(null);
@@ -489,6 +585,16 @@ export default function NowPlayingPage({
         return;
       }
 
+      if (showSongInfo) {
+        setShowSongInfo(false);
+        return;
+      }
+
+      if (moreMenuOpen) {
+        setMoreMenuOpen(false);
+        return;
+      }
+
       if (lyricMenuOpen) {
         setLyricMenuPos(null);
         return;
@@ -499,7 +605,7 @@ export default function NowPlayingPage({
 
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [lyricMenuOpen, lyricSourceMenuOpen, onClose, showEqualizer, showQueue]);
+  }, [lyricMenuOpen, lyricSourceMenuOpen, showSongInfo, moreMenuOpen, onClose, showEqualizer, showQueue]);
 
   useEffect(() => {
     if (!lyricMenuOpen) {
@@ -544,6 +650,32 @@ export default function NowPlayingPage({
     };
   }, [lyricSourceMenuOpen]);
 
+  useEffect(() => {
+    if (!moreMenuOpen) {
+      return;
+    }
+
+    const closeMenu = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (moreMenuRef.current && target && moreMenuRef.current.contains(target)) {
+        return;
+      }
+      setMoreMenuOpen(false);
+    };
+
+    const closeMenuWithoutEvent = () => setMoreMenuOpen(false);
+
+    window.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("resize", closeMenuWithoutEvent);
+    window.addEventListener("blur", closeMenuWithoutEvent);
+
+    return () => {
+      window.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("resize", closeMenuWithoutEvent);
+      window.removeEventListener("blur", closeMenuWithoutEvent);
+    };
+  }, [moreMenuOpen]);
+
   const getAlignText = (align: LyricAlign): "left" | "center" | "right" => align;
 
   const getAlignIcon = (align: LyricAlign) => {
@@ -561,6 +693,8 @@ export default function NowPlayingPage({
     localStorage.setItem("np_lyric_align", align);
     onLyricCenteredChange?.(align === "center");
     setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
     setLyricMenuPos(null);
   };
 
@@ -574,6 +708,8 @@ export default function NowPlayingPage({
     setLyricFontWeight(next);
     onFontWeightChange?.(next);
     setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
     setLyricMenuPos(null);
   };
 
@@ -586,18 +722,24 @@ export default function NowPlayingPage({
   const toggleTranslation = () => {
     setShowTranslation((previous) => !previous);
     setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
     setLyricMenuPos(null);
   };
 
   const toggleNowPlayingInfo = () => {
     setShowNowPlayingInfo((previous) => !previous);
     setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
     setLyricMenuPos(null);
   };
 
   const triggerReloadLyrics = () => {
     onReloadLyrics?.();
     setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
     setLyricMenuPos(null);
   };
 
@@ -625,6 +767,8 @@ export default function NowPlayingPage({
 
   const handleLyricContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
 
     const menuWidth = 226;
     const menuHeight = 288;
@@ -642,11 +786,60 @@ export default function NowPlayingPage({
   const openLyricSourceDialog = () => {
     onOpenLyricSourceDialog?.();
     setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
   };
 
   const switchLyricSourceMode = (mode: LyricSourceMode) => {
     onLyricSourceModeChange?.(mode);
     setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
+  };
+
+  const toggleDynamicBg = () => {
+    onDynamicBgChange?.(!npDynamicBg);
+    setLyricSourceMenuOpen(false);
+    setShowSongInfo(false);
+    setLyricMenuPos(null);
+    setMoreMenuOpen(false);
+  };
+
+  const splitArtists = splitArtistNames(currentSong?.artist ?? "");
+  const hasArtist = splitArtists.length > 0;
+  const hasAlbum = Boolean(currentSong?.album?.trim());
+  const hasSong = Boolean(currentSong?.id);
+
+  const openCurrentArtist = (artistName?: string) => {
+    if (!splitArtists.length) {
+      return;
+    }
+    onOpenCurrentArtist?.(artistName ?? splitArtists[0]);
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
+  };
+
+  const openCurrentAlbum = () => {
+    if (!hasAlbum) {
+      return;
+    }
+    onOpenCurrentAlbum?.();
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
+  };
+
+  const openCurrentSongInfo = () => {
+    if (!hasSong) {
+      return;
+    }
+    setShowSongInfo(true);
+    setMoreMenuOpen(false);
+  };
+
+  const openSettings = () => {
+    onOpenSettings?.();
+    setShowSongInfo(false);
+    setMoreMenuOpen(false);
   };
 
   const currentProviderLabel = currentLyricProvider ? resolveLyricProviderLabel(currentLyricProvider) : "";
@@ -802,6 +995,8 @@ export default function NowPlayingPage({
               onClick={() => {
                 setLyricMenuPos(null);
                 setLyricSourceMenuOpen(false);
+                setShowSongInfo(false);
+                setMoreMenuOpen(false);
                 setShowEqualizer(false);
                 setShowQueue((previous) => !previous);
               }}
@@ -852,6 +1047,8 @@ export default function NowPlayingPage({
                   className={`np-lyric-ctl-btn${lyricSourceMenuOpen ? " active" : ""}`}
                   onClick={() => {
                     setLyricMenuPos(null);
+                    setShowSongInfo(false);
+                    setMoreMenuOpen(false);
                     setLyricSourceMenuOpen((previous) => !previous);
                   }}
                   title={`歌词来源（当前：${currentLyricSourceText}）`}
@@ -975,6 +1172,8 @@ export default function NowPlayingPage({
               onClick={() => {
                 setLyricMenuPos(null);
                 setLyricSourceMenuOpen(false);
+                setShowSongInfo(false);
+                setMoreMenuOpen(false);
                 setShowQueue(false);
                 setShowEqualizer((previous) => !previous);
               }}
@@ -983,7 +1182,12 @@ export default function NowPlayingPage({
             >
               <MixerHorizontalIcon width={18} height={18} />
             </button>
-            <button className="np-ic-btn np-ic-dim" disabled title="频谱（敬请期待）" data-no-drag="true">
+            <button
+              className={`np-ic-btn${npDynamicBg ? " np-ic-active" : ""}`}
+              onClick={toggleDynamicBg}
+              title={npDynamicBg ? "关闭播放背景效果" : "开启播放背景效果"}
+              data-no-drag="true"
+            >
               <IcoWave />
             </button>
             <button
@@ -1012,9 +1216,50 @@ export default function NowPlayingPage({
           </div>
 
           <div className="np-ctrl-r">
-            <button className="np-ic-btn np-ic-dim" disabled title="更多（敬请期待）" data-no-drag="true">
-              <DotsHorizontalIcon width={18} height={18} />
-            </button>
+            <div className="np-more-wrap" ref={moreMenuRef}>
+              <button
+                className={`np-ic-btn${moreMenuOpen ? " np-ic-active" : ""}`}
+                onClick={() => {
+                  setLyricMenuPos(null);
+                  setLyricSourceMenuOpen(false);
+                  setShowSongInfo(false);
+                  setMoreMenuOpen((previous) => !previous);
+                }}
+                title="更多"
+                data-no-drag="true"
+              >
+                <DotsHorizontalIcon width={18} height={18} />
+              </button>
+              {moreMenuOpen ? (
+                <div className="np-more-menu" data-no-drag="true" onPointerDown={(event) => event.stopPropagation()}>
+                  <div className="np-more-menu-head">更多操作</div>
+                  {splitArtists.length <= 1 ? (
+                    <button type="button" className="np-more-item" onClick={() => openCurrentArtist()} disabled={!hasArtist}>
+                      前往艺术家
+                    </button>
+                  ) : (
+                    <>
+                      <div className="np-more-menu-sep" />
+                      <div className="np-more-menu-head">前往艺术家</div>
+                      {splitArtists.map((artist) => (
+                        <button key={artist} type="button" className="np-more-item" onClick={() => openCurrentArtist(artist)}>
+                          {artist}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  <button type="button" className="np-more-item" onClick={openCurrentAlbum} disabled={!hasAlbum}>
+                    前往专辑
+                  </button>
+                  <button type="button" className="np-more-item" onClick={openCurrentSongInfo} disabled={!hasSong}>
+                    歌曲信息
+                  </button>
+                  <button type="button" className="np-more-item" onClick={openSettings}>
+                    打开设置
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <button
               className="np-ic-btn"
               onClick={() => onMutedChange(!muted)}
@@ -1039,6 +1284,80 @@ export default function NowPlayingPage({
             />
           </div>
         </div>
+
+        {showSongInfo && currentSong ? (
+          <div className="np-song-info-backdrop" data-no-drag="true" onClick={() => setShowSongInfo(false)}>
+            <section
+              className="np-song-info-panel"
+              data-no-drag="true"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <header className="np-song-info-head">
+                <h3>歌曲信息</h3>
+                <button
+                  type="button"
+                  className="np-song-info-close"
+                  onClick={() => setShowSongInfo(false)}
+                  aria-label="关闭歌曲信息"
+                >
+                  ×
+                </button>
+              </header>
+
+              <div className="np-song-info-grid">
+                <div className="np-song-info-row">
+                  <span>标题</span>
+                  <strong>{currentSong.title || "—"}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>艺术家</span>
+                  <strong>{splitArtists.length ? splitArtists.join(" / ") : "—"}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>专辑</span>
+                  <strong>{currentSong.album || "—"}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>时长</span>
+                  <strong>{fmt(currentSong.duration)}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>格式</span>
+                  <strong>{currentSong.format?.toUpperCase() || "—"}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>码率</span>
+                  <strong>{formatSongBitrate(currentSong.bitrate)}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>采样率</span>
+                  <strong>{formatSongSampleRate(currentSong.sampleRate)}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>位深</span>
+                  <strong>{formatSongBitDepth(currentSong.bitDepth)}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>声道</span>
+                  <strong>{formatSongChannels(currentSong.channels)}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>文件大小</span>
+                  <strong>{formatSongFileSize(currentSong.fileSize)}</strong>
+                </div>
+                <div className="np-song-info-row">
+                  <span>来源</span>
+                  <strong>{formatSongSourceType(currentSong.sourceType)}</strong>
+                </div>
+                <div className="np-song-info-row np-song-info-row-path">
+                  <span>路径</span>
+                  <strong>{currentSong.filePath || "—"}</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         {showEqualizer ? (
           <div

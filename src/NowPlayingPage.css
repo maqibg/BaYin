@@ -388,6 +388,160 @@
   justify-content: flex-end;
 }
 
+.np-more-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.np-more-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 188px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(12, 14, 22, 0.94);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(12px);
+  padding: 6px;
+  z-index: 28;
+}
+
+.np-more-menu-head {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.58);
+  padding: 6px 8px 8px;
+}
+
+.np-more-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.35;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.np-more-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.np-more-item:disabled {
+  color: rgba(255, 255, 255, 0.36);
+  cursor: default;
+}
+
+.np-more-menu-sep {
+  height: 1px;
+  margin: 6px 8px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.np-song-info-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 27;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.np-song-info-panel {
+  width: min(680px, calc(100% - 32px));
+  max-height: calc(100% - 48px);
+  overflow-y: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(16, 18, 28, 0.94);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(14px);
+  padding: 16px 18px;
+}
+
+.np-song-info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.np-song-info-head h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.np-song-info-close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.np-song-info-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.np-song-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.np-song-info-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.np-song-info-row span {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.np-song-info-row strong {
+  min-width: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.np-song-info-row-path {
+  align-items: start;
+}
+
+.np-song-info-row-path strong {
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
 /* 通用图标按钮 */
 .np-ic-btn {
   width: 36px; height: 36px;

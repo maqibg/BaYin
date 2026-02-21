@@ -42,6 +42,11 @@ interface DbSong {
   serverSongId?: string;
   streamInfo?: string;
   fileModified?: number;
+  format?: string;
+  bitDepth?: number;
+  sampleRate?: number;
+  bitrate?: number;
+  channels?: number;
 }
 
 interface DbAlbum {
@@ -531,6 +536,7 @@ const DEFAULT_LYRIC_PROVIDER_ENABLED: Record<LyricProvider, boolean> = {
 };
 
 const DEFAULT_LYRIC_PROVIDER_ORDER: LyricProvider[] = ["qq", "kugou", "netease"];
+const ARTIST_SPLIT_REGEX = /\/|、/;
 
 const EQ_MIN_GAIN = -12;
 const EQ_MAX_GAIN = 12;
@@ -636,6 +642,17 @@ function normalizeLyricProvider(value: string): LyricProvider | null {
 
 function createSongLyricBindingKey(song: DbSong): string {
   return `${song.sourceType}:${song.serverId ?? "-"}:${song.serverSongId ?? song.id}`;
+}
+
+function splitArtistNames(artist: string): string[] {
+  return Array.from(
+    new Set(
+      artist
+        .split(ARTIST_SPLIT_REGEX)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
 }
 
 function createCandidateIdentity(candidate: OnlineLyricCandidate): string {
@@ -3324,8 +3341,9 @@ export default function App() {
     closeSongMenu();
   };
 
-  const jumpToSongArtist = (song: DbSong) => {
-    setArtistSearchQuery(song.artist);
+  const jumpToSongArtist = (song: DbSong, preferredArtist?: string) => {
+    const artistName = preferredArtist?.trim() || splitArtistNames(song.artist)[0] || song.artist;
+    setArtistSearchQuery(artistName);
     setArtistsSearchMode(true);
     closeSongMenu();
     go("artists");
@@ -5679,6 +5697,28 @@ export default function App() {
           onLyricSizeChange={setLyricSize}
           onLyricCenteredChange={setLyricCentered}
           onFontWeightChange={setFontWeight}
+          onDynamicBgChange={(enabled) => {
+            setNpDynamicBg(enabled);
+            localStorage.setItem("np_dynamic_bg", String(enabled));
+          }}
+          onOpenCurrentArtist={(artistName) => {
+            if (!currentSong?.artist?.trim()) {
+              return;
+            }
+            jumpToSongArtist(currentSong, artistName);
+            setIsNowPlayingOpen(false);
+          }}
+          onOpenCurrentAlbum={() => {
+            if (!currentSong?.album?.trim()) {
+              return;
+            }
+            jumpToSongAlbum(currentSong);
+            setIsNowPlayingOpen(false);
+          }}
+          onOpenSettings={() => {
+            go("settings");
+            setIsNowPlayingOpen(false);
+          }}
           onEqualizerEnabledChange={handleEqualizerEnabledChange}
           onEqualizerGainChange={handleEqualizerGainChange}
           onEqualizerApplyPreset={handleEqualizerApplyPreset}
