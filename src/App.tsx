@@ -1001,6 +1001,8 @@ export default function App() {
 
   // 全屏播放页
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
+  const [npWindowFullscreen, setNpWindowFullscreen] = useState(false);
+  const [npWindowMaximized, setNpWindowMaximized] = useState(false);
 
   // 全屏播放页设置（持久化到 localStorage）
   const [npAutoScrollLyrics, setNpAutoScrollLyrics] = useState(
@@ -4025,6 +4027,27 @@ export default function App() {
     await getCurrentWindow().minimize();
   }, [isTauriEnv]);
 
+  const refreshNowPlayingWindowState = useCallback(async () => {
+    if (!isTauriEnv) {
+      setNpWindowFullscreen(false);
+      setNpWindowMaximized(false);
+      return;
+    }
+
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const appWindow = getCurrentWindow();
+      const [fullscreen, maximized] = await Promise.all([
+        appWindow.isFullscreen(),
+        appWindow.isMaximized(),
+      ]);
+      setNpWindowFullscreen(fullscreen);
+      setNpWindowMaximized(maximized);
+    } catch {
+      // ignore window state read errors
+    }
+  }, [isTauriEnv]);
+
   const toggleMaximizeWindow = useCallback(async () => {
     if (!isTauriEnv) {
       return;
@@ -4032,6 +4055,24 @@ export default function App() {
 
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().toggleMaximize();
+  }, [isTauriEnv]);
+
+  const toggleFullscreenWindow = useCallback(async () => {
+    if (!isTauriEnv) {
+      return;
+    }
+
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const appWindow = getCurrentWindow();
+    const current = await appWindow.isFullscreen();
+    const next = !current;
+    await appWindow.setFullscreen(next);
+    setNpWindowFullscreen(next);
+    if (next) {
+      setNpWindowMaximized(false);
+    } else {
+      setNpWindowMaximized(await appWindow.isMaximized());
+    }
   }, [isTauriEnv]);
 
   const closeWindow = useCallback(async () => {
@@ -4045,6 +4086,30 @@ export default function App() {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().close();
   }, [isTauriEnv]);
+
+  useEffect(() => {
+    if (!isNowPlayingOpen) {
+      setNpWindowFullscreen(false);
+      setNpWindowMaximized(false);
+      return;
+    }
+
+    void refreshNowPlayingWindowState();
+  }, [isNowPlayingOpen, refreshNowPlayingWindowState]);
+
+  useEffect(() => {
+    if (!isNowPlayingOpen) {
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      void refreshNowPlayingWindowState();
+    }, 900);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [isNowPlayingOpen, refreshNowPlayingWindowState]);
 
   const exitApp = useCallback(async () => {
     if (!isTauriEnv) {
@@ -5718,6 +5783,29 @@ export default function App() {
           onOpenSettings={() => {
             go("settings");
             setIsNowPlayingOpen(false);
+          }}
+          windowFullscreen={npWindowFullscreen}
+          windowMaximized={npWindowMaximized}
+          onToggleWindowFullscreen={() => {
+            void (async () => {
+              await toggleFullscreenWindow();
+              await refreshNowPlayingWindowState();
+            })();
+          }}
+          onMinimizeWindow={() => {
+            void (async () => {
+              await minimizeWindow();
+              await refreshNowPlayingWindowState();
+            })();
+          }}
+          onToggleWindowMaximize={() => {
+            void (async () => {
+              await toggleMaximizeWindow();
+              await refreshNowPlayingWindowState();
+            })();
+          }}
+          onCloseWindow={() => {
+            void closeWindow();
           }}
           onEqualizerEnabledChange={handleEqualizerEnabledChange}
           onEqualizerGainChange={handleEqualizerGainChange}

@@ -2,6 +2,9 @@
   font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
   color: #111827;
   background: #f7f7fa;
+  --btn-radius-sm: 8px;
+  --btn-radius-md: 10px;
+  --btn-radius-lg: 12px;
 }
 
 * {
@@ -27,6 +30,13 @@ button {
   border: none;
   background: none;
   cursor: pointer;
+  border-radius: var(--btn-radius-md);
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+button:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.42);
+  outline-offset: 2px;
 }
 
 .app-shell {
@@ -72,7 +82,7 @@ button {
   width: 20px;
   height: 20px;
   transform: translateY(30px);
-  border-radius: 0;
+  border-radius: var(--btn-radius-sm);
   padding: 0;
   color: #717b8b;
 }
@@ -313,7 +323,7 @@ button {
 .window-btn {
   width: 36px;
   height: 28px;
-  border-radius: 0;
+  border-radius: var(--btn-radius-sm);
   display: grid;
   place-items: center;
   color: #7a8391;
@@ -1697,7 +1707,7 @@ button {
 .switch {
   width: 42px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: var(--btn-radius-lg);
   background: #ced4dd;
   padding: 2px;
   display: flex;
@@ -1711,7 +1721,7 @@ button {
 .switch span {
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: calc(var(--btn-radius-lg) - 2px);
   background: #fdfdfd;
   transition: transform 0.2s ease;
 }
@@ -1801,7 +1811,7 @@ button {
 .play-main-btn {
   width: 50px;
   height: 50px;
-  border-radius: 999px;
+  border-radius: var(--btn-radius-lg);
   border: 1px solid #dee4ee;
   background: #f8fafc;
   font-size: 19px;
@@ -2020,7 +2030,7 @@ button {
 .song-context-close {
   width: 26px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: var(--btn-radius-sm);
   color: #8392a7;
   font-size: 20px;
   line-height: 1;
@@ -4012,7 +4022,7 @@ button {
   border: 1px solid #d5deea;
   background: #f7f9fc;
   color: #50607a;
-  border-radius: 999px;
+  border-radius: var(--btn-radius-md);
   padding: 5px 11px;
   display: inline-flex;
   align-items: center;

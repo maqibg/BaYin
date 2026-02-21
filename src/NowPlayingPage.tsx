@@ -105,6 +105,12 @@ export interface NowPlayingPageProps {
   onOpenCurrentArtist?: (artistName?: string) => void;
   onOpenCurrentAlbum?: () => void;
   onOpenSettings?: () => void;
+  windowFullscreen?: boolean;
+  windowMaximized?: boolean;
+  onToggleWindowFullscreen?: () => void;
+  onMinimizeWindow?: () => void;
+  onToggleWindowMaximize?: () => void;
+  onCloseWindow?: () => void;
   onEqualizerEnabledChange: (enabled: boolean) => void;
   onEqualizerGainChange: (index: number, gain: number) => void;
   onEqualizerApplyPreset: (gains: number[]) => void;
@@ -300,6 +306,50 @@ const IcoDown = () => (
   </svg>
 );
 
+const IcoWindowFull = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden>
+    <path d="M8 3H4v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M20 8V4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M16 21h4v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3 16v4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const IcoWindowExitFull = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden>
+    <path d="M9 9H4V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M15 9h5V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9 15H4v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M15 15h5v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const IcoWindowMinimize = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden>
+    <path d="M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+  </svg>
+);
+
+const IcoWindowMaximize = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden>
+    <rect x="5" y="5" width="14" height="14" rx="1.5" stroke="currentColor" strokeWidth="2" />
+  </svg>
+);
+
+const IcoWindowRestore = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden>
+    <rect x="8" y="8" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="2" />
+    <path d="M6 15V6h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const IcoWindowClose = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden>
+    <path d="M6 6l12 12" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    <path d="M18 6 6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+  </svg>
+);
+
 const IcoPlay = () => (
   <svg viewBox="0 0 24 24" fill="none" width="28" height="28" aria-hidden>
     <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" style={{ fill: "currentColor", stroke: "none" }} />
@@ -433,6 +483,12 @@ export default function NowPlayingPage({
   onOpenCurrentArtist,
   onOpenCurrentAlbum,
   onOpenSettings,
+  windowFullscreen = false,
+  windowMaximized = false,
+  onToggleWindowFullscreen,
+  onMinimizeWindow,
+  onToggleWindowMaximize,
+  onCloseWindow,
   onEqualizerEnabledChange,
   onEqualizerGainChange,
   onEqualizerApplyPreset,
@@ -843,6 +899,9 @@ export default function NowPlayingPage({
   };
 
   const currentProviderLabel = currentLyricProvider ? resolveLyricProviderLabel(currentLyricProvider) : "";
+  const hasWindowControlButtons = Boolean(
+    onToggleWindowFullscreen || onMinimizeWindow || onToggleWindowMaximize || onCloseWindow,
+  );
 
   const renderLyrics = () => {
     if (lyricsLoading) {
@@ -1005,6 +1064,46 @@ export default function NowPlayingPage({
             >
               <HamburgerMenuIcon width={18} height={18} />
             </button>
+            {hasWindowControlButtons ? (
+              <>
+                <button
+                  className={`np-tb-btn${windowFullscreen ? " np-tb-btn-active" : ""}`}
+                  onClick={() => onToggleWindowFullscreen?.()}
+                  aria-label={windowFullscreen ? "退出全屏" : "全屏"}
+                  title={windowFullscreen ? "退出全屏" : "全屏"}
+                  data-no-drag="true"
+                >
+                  {windowFullscreen ? <IcoWindowExitFull /> : <IcoWindowFull />}
+                </button>
+                <button
+                  className="np-tb-btn"
+                  onClick={() => onMinimizeWindow?.()}
+                  aria-label="缩小"
+                  title="缩小"
+                  data-no-drag="true"
+                >
+                  <IcoWindowMinimize />
+                </button>
+                <button
+                  className={`np-tb-btn${windowMaximized ? " np-tb-btn-active" : ""}`}
+                  onClick={() => onToggleWindowMaximize?.()}
+                  aria-label={windowMaximized ? "还原" : "放大"}
+                  title={windowMaximized ? "还原" : "放大"}
+                  data-no-drag="true"
+                >
+                  {windowMaximized ? <IcoWindowRestore /> : <IcoWindowMaximize />}
+                </button>
+                <button
+                  className="np-tb-btn np-tb-btn-close"
+                  onClick={() => onCloseWindow?.()}
+                  aria-label="关闭"
+                  title="关闭"
+                  data-no-drag="true"
+                >
+                  <IcoWindowClose />
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 

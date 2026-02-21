@@ -11,6 +11,9 @@
   flex-direction: column;
   animation: np-in .26s cubic-bezier(.25,.46,.45,.94) both;
   user-select: none;
+  --np-btn-radius-sm: 8px;
+  --np-btn-radius-md: 10px;
+  --np-btn-radius-lg: 12px;
 }
 @keyframes np-in {
   from { opacity: 0; transform: translateY(20px); }
@@ -75,13 +78,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: var(--np-btn-radius-md);
   transition: background .15s, color .15s;
   flex-shrink: 0;
   padding: 0;
 }
 .np-tb-btn:hover { background: rgba(255,255,255,.1); color: #fff; }
 .np-tb-btn-active { color: #7dc5ff !important; }
+.np-tb-btn-close:hover {
+  background: rgba(255, 88, 88, 0.26);
+  color: #ffd7d7;
+}
 .np-tb-drag {
   height: 36px;
   border-radius: 10px;
@@ -94,7 +101,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .np-source-wrap {
@@ -552,7 +559,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: var(--np-btn-radius-md);
   transition: color .15s, background .15s;
   padding: 0;
   flex-shrink: 0;
@@ -567,21 +574,19 @@
 /* 播放/暂停大按钮 */
 .np-play-btn {
   width: 54px; height: 54px;
-  border-radius: 50%;
-  border: none;
-  background: #fff;
-  color: #1a1a2e;
+  border-radius: var(--np-btn-radius-lg);
+  border: 1px solid rgba(255,255,255,.28);
+  background: rgba(12,16,26,.28);
+  color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 18px rgba(0,0,0,.42);
-  transition: transform .12s, box-shadow .12s;
+  box-shadow: 0 8px 22px rgba(0,0,0,.34);
+  transition: none;
   padding: 0;
   flex-shrink: 0;
 }
-.np-play-btn:hover  { transform: scale(1.07); box-shadow: 0 6px 22px rgba(0,0,0,.5); }
-.np-play-btn:active { transform: scale(.95); }
 .np-play-btn:disabled { opacity: .45; cursor: default; transform: none; }
 
 /* 音量滑块 */
@@ -674,7 +679,7 @@
 .np-eq-switch {
   min-width: 72px;
   height: 32px;
-  border-radius: 999px;
+  border-radius: var(--np-btn-radius-md);
   padding: 0 12px;
   font-size: 12px;
   font-weight: 600;
@@ -689,7 +694,7 @@
 .np-eq-close {
   width: 32px;
   height: 32px;
-  border-radius: 999px;
+  border-radius: var(--np-btn-radius-md);
   font-size: 20px;
   line-height: 1;
 }
@@ -702,7 +707,7 @@
 }
 
 .np-eq-preset {
-  border-radius: 999px;
+  border-radius: var(--np-btn-radius-md);
   height: 30px;
   padding: 0 12px;
   font-size: 12px;
@@ -975,7 +980,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: var(--np-btn-radius-md);
   transition: color .15s, background .15s;
   line-height: 1;
   padding: 0;
